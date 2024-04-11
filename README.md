@@ -13,7 +13,7 @@ Once these calculations are done (and there could be 10k of them easily) the pro
 # To use:
 Optimise the geometry of your molecule of interest at some level of theory (and make not of that level, it isn't automatically carried over)<br>
 Read geometry and make a grid <br>`create_grid(filename = 'rm734.log', dx = 20.0, dy = 7.0, dz = 5, res = 0.5, full_dz = False, min_dist = 3, max_dist = 5)`<br>
-Process the data <br>`data = process_files(path=os.getcwd(),method=0)` and shape it `dx_values, dy_values, dz_values, dyz_values, e_values, de_values = shape_data(data)`<br>
+Process the data <br>`data = process_files(path=os.getcwd(),method=0)` <br>and shape it <br>`dx_values, dy_values, dz_values, dyz_values, e_values, de_values = shape_data(data)`<br>
 Get plotting in 2D <br>`make_contour_plot(dx_values,dy_values,e_values)`<br>
 ![image](https://github.com/RichardMandle/bimolpes/assets/101199234/a8fdb68e-4953-4b6c-ae12-945ce861d8c1)
 
