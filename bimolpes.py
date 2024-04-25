@@ -17,18 +17,20 @@ import visualisation as vis
 import processing as pro
 
 def main():
-    parser = argparse.ArgumentParser(description="bimolpes - bimolecular potential energy surfaces")
-    
-    subparsers = parser.add_subparsers(help='commands', dest='command')
+    parser = argparse.ArgumentParser(description="bimolpes - generate and process bimolecular potential energy surfaces")
+    subparsers = parser.add_subparsers(help='commands', dest='command') # subparsers for write and read modes
     subparsers.required = True
 
     # Sub-parser for the write command
     write_parser = subparsers.add_parser('write', help='Reads a Gaussian output file (or 2 files) and extracts molecular geometry\nGenerates and writes a grid of translated coordinates for two molecules as .gjf files, including job sub script (.sh for SGE)\n\n Files are given as .zip; just upload to HPC unzip and run')
-    
     write_parser.add_argument("-x", type=parse_dimension, default=(0.0, 0.0), help="Range for x dimension, specify as 'start end' or just 'value' to use '-value value'")
     write_parser.add_argument("-y", type=parse_dimension, default=(0.0, 0.0), help="Range for y dimension, specify as 'start end' or just 'value' to use '-value value'")
     write_parser.add_argument("-z", type=parse_dimension, default=(0.0, 0.0), help="Range for z dimension, specify as 'start end' or just 'value' to use '-value value'")
-    write_parser.add_argument('--res', type=float, default=1.0, help='Resolution of the grid')    
+    write_parser.add_argument('-est', action='store_const', const=True, default=True, help='Estimate grid dimensions from input file (experimental)')
+    write_parser.add_argument("-est_x", type=float, default=0.0, help="additional displacement in x dimension from estimated displacement")
+    write_parser.add_argument("-est_y", type=float, default=0.0, help="additional displacement in y dimension from estimated displacement")
+    write_parser.add_argument("-est_z", type=float, default=0.0, help="additional displacement in z dimension from estimated displacement")
+    write_parser.add_argument('-res', type=float, default=1.0, help='Resolution of the grid')    
     
     write_parser.add_argument('-xa', type=float, default=0.0, help='Angle to rotate mol. #2 by in X-axis, in degrees')
     write_parser.add_argument('-ya', type=float, default=0.0, help='Angle to rotate mol. #2 by in Y-axis, in degrees')
@@ -43,13 +45,11 @@ def main():
     write_parser.add_argument('-inp', type=str, default='', help='Gaussian .log file of OPTIMISED structure of molecule 1')    
     write_parser.add_argument('-inp2', type=str, default=None, help='Gaussian .log file of OPTIMISED structure of molecule 2 (optional, defaults to homo-bimolecular PES')    
     write_parser.add_argument('-out', type=str, default=None, help='Naming schema for output .gjf files (optional; defaults to mol1_mol2\mol1_mol2 <<TODO extending iteratively?>>)')   
-    
     write_parser.add_argument('-zip', action='store_const', const=False, default=True, help='Don\'t zip output!')
     
     write_parser.set_defaults(func=write_grid)
 
-    # Sub-parser for the read command
-    # first up; options for the 3d scatter plot.
+    # Sub-parser for the read command; first up, options for the 3d scatter plot.
     read_parser = subparsers.add_parser('read', help='Read completed gaussian calculations generated using write mode\nVisualise data, molecular contacts, finds minima')
     read_parser.add_argument('-path', type=str, default=os.getcwd(), help='Path to read .log files from')
     read_parser.add_argument('-method', type=int, default=1, help='Energy type to use; 0 = SCF, 1 = counterpoise corrected complexation')
@@ -58,7 +58,9 @@ def main():
     read_parser.add_argument('-plt_emax', type=float, default=0, help='Only show points where energy is below e_max (float)')    
     read_parser.add_argument('-plt_size', type=float, default=1, help='Size of grid energy points (float, default = 1)')    
     read_parser.add_argument('-plt_alpha', type=float, default=1, help='Alpha vlaues of grid energy points (float, default = 1)')    
-    
+    read_parser.add_argument('-plt_style', type=str, default='trisurf', help='Select between tri_surf or scatter plotting of Energy vs XYZ')
+    read_parser.add_argument('-plt_cmap', type=str, default='plasma', help='Pass any valid matplotlib colourmap (cmap) to use in plotting')
+                
     # sub parts for drawing of molecule using matplotlib...
     read_parser.add_argument('-mol', type=str, default=None, help='Gaussian .log file for the molecule to draw on the PES')
     read_parser.add_argument('-mol2', type=str, default=None, help='Gaussian .log file for the molecule to draw on the PES')
@@ -67,9 +69,10 @@ def main():
     read_parser.add_argument('-mol_size', type=float, default=128, help='Size of \'atoms\' in molecule (float, default = 128)')    
     read_parser.add_argument('-mol_alpha', type=float, default=1, help='Alpha vlaues of atoms in molecule (float, default = 1)')    
     read_parser.add_argument('-greyscale', action='store_const', const=True, default=False, help='Draw the molecule(s) in greyscale')
-            
+
+    
     # save for easy reloading
-    read_parser.add_argument('-save', action='store_const', const=True, default=True, help='Save output to .npz for easy reloading')
+    read_parser.add_argument('-nosave', action='store_const', const=True, default=False, help='Save output to .npz for easy reloading')
     read_parser.add_argument('-reload', action='store_const', const=True, default=False, help='reload bimolpes data from .npz file')
     read_parser.add_argument('-filename', type=str, default='mydata', help='filename to use for saving .npz')  
     
@@ -112,8 +115,12 @@ def write_grid(args):
         
     os.makedirs(outpath, exist_ok=True)
     file_plus_path = outpath + '\\' + outpath
-   
-    grid = geo.gen_grid(x = args.x, y = args.y, z = args.z, res = args.res) # get a grid using the user supplied spacings.
+        
+    if args.est == True:
+        print(f'Estimating displacements based on final geometry of {args.inp}')
+        args.x, args.y, args.z = geo.estimate_grid_from_glog(args.inp, dx = args.est_x, dy = args.est_y, dz = args.est_z)          # here, estimate the x/y/z ranges from the input file using geo.estimate_grid_from_glog.
+        
+    grid = geo.gen_grid(x = args.x, y = args.y, z = args.z, res = args.res)     # get a grid using the user supplied spacings.
     
     outname, count =  create_grid(args.inp, grid = grid, x_angle = args.xa, y_angle = args.ya, z_angle = args.za,min_dist = args.min, max_dist = args.max, filename2 = args.inp2, outname = file_plus_path)
     
@@ -145,11 +152,6 @@ def create_grid(filename, grid, nproc=8, vmem=4, x_angle = 0, y_angle = 0, z_ang
         gjf files - Gaussian input files, one for each accepted set of translations
         sh file   - SGE file for executing on ARC3/4
         
-    Example Usage:
-                 
-    create_grid(filename = 'rm734.log', dx = 5, dy = 5, dz = 6, x_angle=45, y_angle = 90, z_angle = 180, res = 1, full_dz = False, min_dist = 3, max_dist = 5)
-    ^^^ This loads 'rm734.log' and creates a grid of 5x5x6 Ang. displacement with resolution of 1 in one hemisphere. 
-    Applies some arbitrary rotation (45, 90, 180). Cuts out geometry closer than 3 ang and further than 5 ang.
     '''
     
     if (outname == None) & (filename2 != None):
@@ -162,8 +164,8 @@ def create_grid(filename, grid, nproc=8, vmem=4, x_angle = 0, y_angle = 0, z_ang
     
     geometry = geo.generate_coords(gps.get_geometries(filename)[-1])
     frag2_geometry = geometry    # set as the same for now, update below
-    
-    if (filename2 != None) | (filename2 != filename):
+
+    if (filename2 != None) | ((filename2 != filename) & (filename2 != None)):
         frag2_geometry = geo.generate_coords(gps.get_geometries(filename2)[-1])
         
     if (np.abs(x_angle) + np.abs(y_angle) + np.abs(z_angle)) != 0:
@@ -182,7 +184,7 @@ def create_grid(filename, grid, nproc=8, vmem=4, x_angle = 0, y_angle = 0, z_ang
                 file_name = outname + '_' + str(count)
                 gps.write_gjf(frag1, frag2, displacement=displacement, file_name=file_name)
                 count += 1
-    print(f'A total of {count-1} geometries converted to .gjf after spatial cutoffs of min_dist={min_dist} and max_dist={max_dist}')
+    print(f'A total of {count-1} geometries written to .gjf after spatial cutoffs of min_dist={min_dist} and max_dist={max_dist}')
     
     return outname, count
     
@@ -192,11 +194,10 @@ def handle_read(args):
    
     if args.reload == True:
         data = pro.reload_data_from_npz(args.filename)
-        args.save = False # no point saving if we've just loaded it.
     else:
         data = pro.process_files(path=args.path, method=args.method)
     
-    if args.save == True:
+    if args.nosave == False:
         pro.save_data_to_npz(args.filename, data)
         
     dx_values, dy_values, dz_values, dyz_values, e_values, de_values = pro.shape_data(data)
@@ -213,7 +214,7 @@ def handle_read(args):
             print(f'Local Min.  {minima} {minima_indices[i]}')
     
     if args.noplt == False:
-        ax = vis.make_minimal_volumetric_plot(dx_values, dy_values, dz_values, e_values, e_max = args.plt_emax, size = args.plt_size, mirror = args.mirror, plot_mol = args.mol, alpha = args.plt_alpha)
+        ax = vis.plot_volumetric(dx_values, dy_values, dz_values, e_values, e_max = args.plt_emax, size = args.plt_size, mirror = args.mirror, plot_mol = args.mol, alpha = args.plt_alpha, plot_style = args.plt_style, cmap = args.plt_cmap)
         
         if args.mol != None:
             vis.plot_molecule(filename=args.mol, ax = ax, size = args.mol_size, alpha = args.mol_alpha, real_size = args.real_size, greyscale = args.greyscale)
@@ -232,6 +233,6 @@ if __name__ == "__main__":
     print('| _ )_ _|  \/  |/ _ \| |  | _ \ __/ __|')
     print('| _ \| || |\/| | (_) | |__|  _/ _|\__ \\')
     print('|___/___|_|  |_|\___/|____|_| |___|___/')
-    print(f'\nVersion: 0.3 running on {platform.system()} {platform.version()}')
+    print(f'\nVersion: 0.4; running on {platform.system()} {platform.version()}')
     print(f'Authors: Dr. R.J.Mandle; University of Leeds, 2024\n')
     main()

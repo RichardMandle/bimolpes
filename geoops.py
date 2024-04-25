@@ -6,6 +6,36 @@ from rdkit import Chem
 
 import gauops as gps
 
+def estimate_grid_from_glog(filename, dx = 0, dy = 0, dz = 0):
+    '''
+    Reads a gaussian output file (glog; filename) and estimate a reasonable set of x/y/z displacements as the floor/ceiling of the min/max x/y/z values
+    
+    Args:
+        filename: the gaussian output file from which we'll read and parse geometry
+        dx/dy/dz: additional user requested displacement in X/Y/Z, respectively. Coded to be symmetric (could improve that easily)
+    
+    Returns:
+        Tuple containing displacements suitable for the parse_dimension function called in bimolpes.py
+    '''
+    geometry = generate_coords(gps.get_geometries(filename)[-1])
+    
+    min_x = min_y = min_z = float('inf')    # Initialize minimums to infinity
+    max_x = max_y = max_z = -float('inf')   # Initialize maxima to negative infinity
+    
+    for line in geometry:
+        parts = line.split()
+        atom_vdw_radii = Chem.GetPeriodicTable().GetRvdw(parts[0])  # get VdW radii of the atom
+        x, y, z = map(float, parts[1:4])
+        
+        min_x = np.floor(min(min_x, x - (atom_vdw_radii + dx))) # take displacements +/- vwd radii and additional user requested displacemenet (dx/y/z)
+        min_y = np.floor(min(min_y, y - (atom_vdw_radii + dy)))
+        min_z = np.floor(min(min_z, z - (atom_vdw_radii + dz)))
+        max_x = np.ceil(max(max_x, x + (atom_vdw_radii + dx)))
+        max_y = np.ceil(max(max_y, y + (atom_vdw_radii + dy)))
+        max_z = np.ceil(max(max_z, z + (atom_vdw_radii + dz)))
+    
+    return ((min_x, max_x), (min_y, max_y), (min_z, max_z))
+    
 def generate_coords(extracted_geometry):
     '''
     takes extracted geometry from get_geometries and polishes it so we can reuse it in a new input .gjf file
