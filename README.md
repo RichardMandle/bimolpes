@@ -10,23 +10,29 @@ Bimolpes works in either `write` or `read` mode. <br>
 With `python bimolpes.py write`:<br>
 This takes an initial geometry (molecule #1; Gaussian .log file specified as `-inp`) which is optimised at some level, and generates a user specified set of translation coordinates (`-x` `-y` or `-z`: either supply two values, min:max, or one, -val:val) The resolution is controlled with the `-res` flag; the analysis code is written in such a way that you can combine an initial low resolution grid with higher resolution scans over volumes of interest.<br><br>
 
+If you don't really know what spacings you want then you can pass the `-est` flag; this reads the geometry in your input file (`-inp`) and finds the min/max values for x/y/z. The Van derWaals radii is added to each point (according to the atom type), along with a user supplied additional displacement for each dimension (`-est_x`, `-est_y`, `-est_z` - all default to zero). <br><br>
+
 A second copy of the molecule (molecule #2; gaussian .log file is given by `-inp2` or is the same as #1 by default) is imposed at each translation coordinate, provided it doesn't fall foul of our minimum and maximum atomic seperation cutoffs (min_dist, max_dist). <br><br>
 
 You can apply rotation of molecule 2 relative to #1 using the `-xa` / `-ya` / `-za` flags and passing the desired angle in degrees.<br><br>
 
 To reduce the computational workload you cna use the `-min` and `-max` flags to specify the minimum and maximum atomic seperations which are permitted; those outside this range are rejected.<br><br>
 
-Each set of coordinates is then written to a Gaussian .gjf file; these include fragment information for each molecule, permitting counterpoise correction. Empirical dispersion is a essential (GD3BJ). You should use the same functional/basis set as the initial optimisation. The program writes these to the directory given by `-out` (or defaults to -inp1_inp2) and will write to .zip file (contains .gjf and .sh files) unless told not to.<br><br>
+Each set of coordinates is then written to a Gaussian .gjf file; these include fragment information for each molecule, permitting counterpoise correction. Empirical dispersion is a essential (GD3BJ). You should use the same functional/basis set as the initial optimisation. The program writes these to the directory given by `-out` (or defaults to -inp1_inp2) and will write to .zip file (contains .gjf and .sh files) unless told not to by passing the `-zip` flag.<br><br>
 
 With `python bimolpes.py read`:
 After executing all .gjf files on the HPC, download these locally and store them _somewhere_. Use the `-path` flag to give this location. 
 The `-method` flag allows to choose between SCF energy (=0) or counterpoise corrected complexation energy (=1; default).<br><br>
+Data is saved automatically after reading (unless `-nosave` is called); specify the filename with `-filename` (defaults to `-filename mydata`). You can then reload this data with the `-reload` flag (e.g. `-reload mydata`) which saves having to read all the .log files again.
 
 Various options allow control of the plotted PES; 
 `-mirror` mirrors the PES about the xy plane;<br>
 `-noplt` turns off plotting; <br>
 `-plt_emax` allows us to specify an upper limit for \Delta Energy; <br>
-`-plt_size` controls the size of the points on the PES; <br>
+`-plt_size` controls the size of the points on the PES (for scatter plots only); <br>
+`-plt_alpha` controls the alpha (transparency) of points on the PES; <br>
+`-plt_style` Allows choosing between normal scatter plots (`-plt_style scatter`) or a triangulated surface (`plt_style trisurf`). The later is somewhat experimental. <br>
+`-plt_cmap` name of the matplotlib cmap to use. Defaults to plasma; consult https://matplotlib.org/stable/users/explain/colors/colormaps.html<br>
 `-mol` allows us to pass the .log file of a molecule to draw on the PES; <br>
 `-mol2` as before, but used for drawing a translated molecule in conjunction with... <br>
 ...`-mol2_idx`, which allows us to specify the index of the translation coordinates (these are outptu automatically by read mode); <br>
