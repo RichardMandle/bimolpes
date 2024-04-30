@@ -1,10 +1,35 @@
-#functions for analysis
+#functions for analysis and/or processing
 
 import os
 import numpy as np
 import zipfile
 
 import gauops as gps
+
+def get_output_filename(outname = None, filename = None, filename2 = None):
+    '''
+    Simple function to auto-generate apropriate output names, if not given.
+    '''
+    
+    if (outname == None) & (filename2 != None):
+        outname = filename.split('.')[0] + '_' + filename2.split('.')[0]
+    
+    if (outname == None) & (filename2 == None):
+        outname = filename.split('.')[0]
+    print(f'Will write data to {outname}')
+    
+    return outname
+def mask_values(dx_values, dy_values, dz_values, e_values, e_max):
+    '''
+    Logic for masking dx/y/z where e-values are above e_max
+    '''
+    print(f'Masking entries where energy is <= {e_max}')
+    mask = e_values <= e_max
+    e_values = e_values[mask]
+    dx_values = dx_values[mask]
+    dy_values = dy_values[mask]
+    dz_values = dz_values[mask]
+    return dx_values, dy_values, dz_values, e_values
     
 def zip_files(dir_path, zip_file, ext=None):
     '''
@@ -73,12 +98,12 @@ def shape_data(data):
         de_values - delta energy
     '''
     
-    dx_values = [row[0] for row in data]
-    dy_values = [row[1] for row in data]
-    dz_values = [row[2] for row in data]
+    dx_values = np.array([row[0] for row in data])
+    dy_values = np.array([row[1] for row in data])
+    dz_values = np.array([row[2] for row in data])
     dyz_values = np.sqrt((np.array([row[1] for row in data])**2) + (np.array([row[2] for row in data])**2))
-    e_values = [row[3] for row in data]
-    de_values = e_values - np.min(e_values)
+    e_values = np.array([row[3] for row in data])
+    de_values = np.array(e_values - np.min(e_values))
     
     return dx_values, dy_values, dz_values, dyz_values, e_values, de_values
 
@@ -131,6 +156,15 @@ def find_local_minima(data, num_minima=50, e_threshold=5, d_threshold=2):
     return np.array(minima_list)
 
 def find_indices_of_minima(data, minima):
+    '''
+    Given a list of data (from shape_data) and minima (from find_local_minima), return the index of these
+    
+    Args:
+        data    -   data; taken from shape_data
+        minima  -   list of local minima
+    Returns:
+        indices -   the indices of each minima in data.
+    '''
     indices = []
 
     for minima_row in minima:

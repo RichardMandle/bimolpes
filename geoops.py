@@ -66,7 +66,7 @@ def generate_coords(extracted_geometry):
         
     return(coords)
 	
-def gen_grid(x, y, z, res = 0.25):
+def gen_grid(x, y, z, res = 0.25, min_disp = None):
     """
     Make a grid that spans =dx to +dx in steps of res
     
@@ -82,11 +82,16 @@ def gen_grid(x, y, z, res = 0.25):
     z_range = np.arange(z[0], z[1] + res, res)
 
     grid = []
+    count = 0
     for x_ in x_range:
         for y_ in y_range:
             for z_ in z_range:
-                grid.append((x_, y_, z_))
-    print(f'Using a grid of x={x} y={y} z={z} res={res}; Final grid size={np.product(np.shape(grid))}')
+                if (min_disp is None) or (np.sqrt(x_**2 + y_**2 + z_**2) >= min_disp):
+                    grid.append((x_, y_, z_))
+                    count += 1
+    print(f'\nA total of {np.product(np.shape(grid)) - count} grid points rejected due to close contact (min_dist={min_disp})')
+    print(f'Using a grid of x={x} y={y} z={z} res={res}; Final grid size={np.product(np.shape(grid))}\n')
+    
     
     return grid
 
@@ -153,6 +158,8 @@ def rotate_coordinates(coordinates, x_angle=0, y_angle=0, z_angle=0):
     Returns:
         adjusted_geometry - the input geometry rotated by user supplied angle(s).
     '''
+    print(f'Rotating fragment by: x={x_angle}, y={y_angle}, z={z_angle}')
+    
     x_rad = np.radians(x_angle)
     y_rad = np.radians(y_angle)
     z_rad = np.radians(z_angle)
