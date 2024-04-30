@@ -21,18 +21,28 @@ To reduce the computational workload you cna use the `-min` and `-max` flags to 
 Each set of coordinates is then written to a Gaussian .gjf file; these include fragment information for each molecule, permitting counterpoise correction. Empirical dispersion is a essential (GD3BJ). You should use the same functional/basis set as the initial optimisation. The program writes these to the directory given by `-out` (or defaults to -inp1_inp2) and will write to .zip file (contains .gjf and .sh files) unless told not to by passing the `-zip` flag.<br><br>
 
 With `python bimolpes.py read`:
-After executing all .gjf files on the HPC, download these locally and store them _somewhere_. Use the `-path` flag to give this location. 
-The `-method` flag allows to choose between SCF energy (=0) or counterpoise corrected complexation energy (=1; default).<br><br>
-Data is saved automatically after reading (unless `-nosave` is called); specify the filename with `-filename` (defaults to `-filename mydata`). You can then reload this data with the `-reload` flag (e.g. `-reload mydata`) which saves having to read all the .log files again.
-
+After executing all .gjf files on the HPC, download these locally and store them _somewhere_. Use the `-path` flag to give this location. Various options are available:<br>
+`-method` flag allows to choose between SCF energy (=0) or counterpoise corrected complexation energy (=1; default);<br>
+`-nosave` turns off saving the read data to .npz if called; <br> 
+`-filename` allows us to specify a filename to save/reload; <br>
+`-reload` loads a .npz file which is quicker than reading loads of .log files; <br>
+`-filename` allows us to specify a filename to save/reload (used for plotting); <br>
+`-minima` controls the numbeer of minima that the program will find... <br>
+...`-ethr` controls the energy cutoff for identifying discrete minima...; <br>
+...`-dthr` controls the distance cutoff for identifying discrete minima.<br>
+<br>
+Minima information is printed to the terminal and is used to guide visualisation as needed. <br><br>
 Various options allow control of the plotted PES; 
-`-mirror` mirrors the PES about the xy plane;<br>
-`-noplt` turns off plotting; <br>
+With `python bimolpes.py plot`:
+`-filename` allows us to specify a filename to reload parsed data from. <br>
+<br> Various options allow control over the plotting of the PES landscape:<br>
 `-plt_emax` allows us to specify an upper limit for \Delta Energy; <br>
-`-plt_size` controls the size of the points on the PES (for scatter plots only); <br>
+`-plt_size` controls the size of the points on the PES (for `points` and `fancymesh` only); <br>
 `-plt_alpha` controls the alpha (transparency) of points on the PES; <br>
-`-plt_style` Allows choosing between normal scatter plots (`-plt_style scatter`) or a triangulated surface (`plt_style trisurf`). The later is somewhat experimental. <br>
+`-plt_style` Allows choosing between normal different triangulated surface plots available through mayavi: e.g. `surface`, `points`, `wireframe`, `fancymesh` etc.; see mlab docs;<br>
+`-plt_line` Set the line width used in `wireframe` or `fancymesh` plots; defaults to 2.0; set to 0 to hide lines; <br>
 `-plt_cmap` name of the matplotlib cmap to use. Defaults to plasma; consult https://matplotlib.org/stable/users/explain/colors/colormaps.html<br>
+<br> We can draw one (or two) molecules atom the PES landscape: the second molecule is displaced according to the read translation coordinates<br>
 `-mol` allows us to pass the .log file of a molecule to draw on the PES; <br>
 `-mol2` as before, but used for drawing a translated molecule in conjunction with... <br>
 ...`-mol2_idx`, which allows us to specify the index of the translation coordinates (these are outptu automatically by read mode); <br>
@@ -40,12 +50,6 @@ Various options allow control of the plotted PES;
 `-mol_size` allows the base atom size to be supplied; <br>
 `-mol_alpha` controls atom transparency; <br>
 `-greyscale` uses a greyscale colouring of atoms; <br>
-`-save` writes data to .npz for easy reloading; <br>
-`-reload` loads a .npz file which is quicker than reading loads of .log files; <br>
-`-filename` allows us to specify a filename to save/reload; <br>
-`-minima` controls the numbeer of minima that the program will find... <br>
-...`-ethr` controls the energy cutoff for identifying discrete minima...; <br>
-...`-dthr` controls the distance cutoff for identifying discrete minima.<br>
 
 # Worked Example:
 Generate a grid of data:
@@ -56,6 +60,10 @@ Execute .gjf files; use read-mode to process data and save without plotting.
 `python bimolpes.py read -minima 10 -filename test -save -noplt`
 ![image](https://github.com/RichardMandle/bimolpes/assets/101199234/e63623e6-1608-4f0c-8f1a-358f4a20c92b)
 <br><br>
-Reload the data and visualise; showing molecules 'A' and 'B' on the PES, separated according to the translation vector of the global minimum (idx = 2970)
-`python bimolpes.py read -filename test -reload -mol A.log -mol2 B.log -mol2_idx 2970`
-![image](https://github.com/RichardMandle/bimolpes/assets/101199234/4abfc1bc-de31-48a2-8f54-f520a3b736e5)
+Reload the data and visualise; showing molecule 'A' on the PES
+`python bimolpes.py plot -filename test -mol A.log `
+![image](https://github.com/RichardMandle/bimolpes/assets/101199234/cf393ef6-566d-4882-af2e-8e81012d71f8)
+<br><br>
+Reload the data and visualise with some custom options; showing molecule 'rm734' on the PES in greyscale. Set the PES alpha/transparency to 0.25, use the viridis colormap; hide values with lower than -5 complexation energy; plot as points.
+`python bimolpes.py plot -mol rm734.log -filename test -mol_alpha 1 -plt_alpha 0.25 -plt_cmap viridis -plt_emax -5 -greyscale -plt_style points -plt_size 10 `
+![image](https://github.com/RichardMandle/bimolpes/assets/101199234/883cb89e-6279-46ac-b9a0-cd3ce2c91903)
