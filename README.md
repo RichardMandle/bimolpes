@@ -2,7 +2,7 @@
 Python tool for generating and analysing rigid bimolecular potential energy surfaces.
 
 # You'll need:
-Numpy, Matplotlib, scipy, Gaussian G16, access to a HPC<br>
+Numpy, Mayavi, scipy, Gaussian G16, access to a HPC<br>
 
 # What it does, and how it does it:
 Bimolpes works in either `write` or `read` mode. <br>
