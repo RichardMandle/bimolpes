@@ -5,12 +5,12 @@ Python tool for generating and analysing rigid bimolecular potential energy surf
 Numpy, Mayavi, scipy, Gaussian G16, access to a HPC<br>
 
 # What it does, and how it does it:
-Bimolpes works in either `write` or `read` mode. <br>
+Bimolpes works in either `write`, `read` or `plot` mode. Argument parsing is done by the BimolPESParser class in the command_parser.py module. Some default values are stored (and can be edited) in `config.ini`<br><br>
 
 With `python bimolpes.py write`:<br>
-This takes an initial geometry (molecule #1; Gaussian .log file specified as `-inp`) which is optimised at some level, and generates a user specified set of translation coordinates (`-x` `-y` or `-z`: either supply two values, min:max, or one, -val:val) The resolution is controlled with the `-res` flag; the analysis code is written in such a way that you can combine an initial low resolution grid with higher resolution scans over volumes of interest.<br><br>
+This takes an initial geometry (molecule #1; Gaussian .log file specified as `-inp`) which is optimised at some level, and generates a user specified set of translation coordinates (`-x` `-y` or `-z`: either supply two values, min:max, or one, -val:val) The resolution is controlled with the `-res` flag; you can supply 1 (x=y=z), 2 (x, y=z) or 3 (x, y, z) values hee. The analysis code is written in such a way that you can combine an initial low resolution grid with higher resolution scans over volumes of interest, so a first pass with `-res` =1 or =2 is fine .<br><br>
 
-If you don't really know what spacings you want then you can pass the `-est` flag; this reads the geometry in your input file (`-inp`) and finds the min/max values for x/y/z. The Van derWaals radii is added to each point (according to the atom type), along with a user supplied additional displacement for each dimension (`-est_x`, `-est_y`, `-est_z` - all default to zero). <br><br>
+If you don't really know what spacings you want then you can pass the `-est` flag; this reads the geometry in your input file (`-inp`) and finds the min/max values for x/y/z; the displacement used is 2x these x/y/z values plus the Van derWaals radii according to the atom type in question. Additionally, the user can supply an additional displacement for each dimension (`-est_x`, `-est_y`, `-est_z` - all default to zero). <br><br>
 
 A second copy of the molecule (molecule #2; gaussian .log file is given by `-inp2` or is the same as #1 by default) is imposed at each translation coordinate, provided it doesn't fall foul of our minimum and maximum atomic seperation cutoffs (min_dist, max_dist). <br><br>
 
@@ -18,7 +18,11 @@ You can apply rotation of molecule 2 relative to #1 using the `-xa` / `-ya` / `-
 
 To reduce the computational workload you cna use the `-min` and `-max` flags to specify the minimum and maximum atomic seperations which are permitted; those outside this range are rejected.<br><br>
 
-Each set of coordinates is then written to a Gaussian .gjf file; these include fragment information for each molecule, permitting counterpoise correction. Empirical dispersion is a essential (GD3BJ). You should use the same functional/basis set as the initial optimisation. The program writes these to the directory given by `-out` (or defaults to -inp1_inp2) and will write to .zip file (contains .gjf and .sh files) unless told not to by passing the `-zip` flag.<br><br>
+Each set of coordinates is then written to a Gaussian .gjf file; these include fragment information for each molecule, permitting counterpoise correction. Empirical dispersion is a essential (GD3BJ). You should use the same functional/basis set as the initial optimisation. The program writes these to the directory given by `-out` (or defaults to -inp1_inp2) and will write to .zip file (contains .gjf and .sh files) unless told not to by passing the `-zip` flag. Other options to specify here:<br>
+`-cpu` = number of CPU cores (int, defaults to 4);<br>
+`-mem` = amount of RAM to use (in GB; int, defaults to 4);<br>
+`-groute` = Gaussian route section to use (str, defaults to #T B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ counterpoise=2);<br>
+<br><br>
 
 With `python bimolpes.py read`:
 After executing all .gjf files on the HPC, download these locally and store them _somewhere_. Use the `-path` flag to give this location. Various options are available:<br>
@@ -32,8 +36,7 @@ After executing all .gjf files on the HPC, download these locally and store them
 ...`-dthr` controls the distance cutoff for identifying discrete minima.<br>
 <br>
 Minima information is printed to the terminal and is used to guide visualisation as needed. <br><br>
-Various options allow control of the plotted PES; 
-With `python bimolpes.py plot`:
+Various options allow control of the plotted PES. With `python bimolpes.py plot`:<br>
 `-filename` allows us to specify a filename to reload parsed data from. <br>
 <br> Various options allow control over the plotting of the PES landscape:<br>
 `-plt_emax` allows us to specify an upper limit for \Delta Energy; <br>
