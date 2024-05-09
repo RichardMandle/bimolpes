@@ -15,10 +15,10 @@ def get_geometries(file_path):
     They might be all geometries in an optimisation of some sort
     
     Args:
-    file_path - the file you want to read
+        file_path       - the file you want to read
     
     Returns:
-    all_geometries - the extracted geometry data from the "standard orientation" tables.
+        all_geometries  - the extracted geometry data from the "standard orientation" tables.
     '''
 
     all_geometries = [] # List to store the extracted lines
@@ -63,11 +63,9 @@ def read_gaussian_route_section(file_path):
 def write_gjf(frag1, 
               frag2,
               displacement,
-              nproc=2, 
+              nproc=4, 
               vmem=4, 
-              functional='B3LYP',
-              basis = 'cc-pVTZ',
-              options ='EmpiricalDispersion=GD3BJ counterpoise=2',
+              groute='#T B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ counterpoise=2',
               file_name='test'):
     '''
     Tool for writing two molecular geometries (frag1, frag2) into a gaussian .gjf input file.
@@ -77,16 +75,14 @@ def write_gjf(frag1,
         displacement    - job name, but with displacement coordinates encoded
         nproc           - number of CPU cores to use per job
         vmem            - ammount of ram to use (GB)function
-        functional      - DFT functional (or method) to use
-        basis           - basis set to use (or blank if not needed)
-        options         - additional calculation options (dispersion etc)
+        groute          - gaussian route information; e.g. B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ counterpoise=2
         file_name       - output file name of .gjf file
     '''
     
     with open(file_name + '.gjf', 'w') as f:
         f.write('%nprocshared=' + str(nproc) + '\n')
         f.write('%mem=' + str(vmem) + 'GB\n')
-        f.write('#T ' + functional + ' ' + basis + ' ' + options + '\n\n') # terse output!
+        f.write(groute + '\n\n') 
         f.write(displacement + '\n\n')
         f.write('0 1\n')
         
@@ -96,7 +92,7 @@ def write_gjf(frag1,
         f.write('\n\n')
     return file_name
 
-def make_sge_job(filename='noname', vmem=4, nproc=2, startjob=0, endjob=0):
+def make_sge_job(dir_path='noname', file ='noname', vmem=4, nproc=4, startjob=0, endjob=0):
     """
     Generate a job script for running a Gaussain job on ARC (the UoL compute clusters).
     
@@ -111,27 +107,29 @@ def make_sge_job(filename='noname', vmem=4, nproc=2, startjob=0, endjob=0):
         None
     """
     
+    full_path = os.path.join(dir_path, file)
+
     # Decide if we have a task array (i.e. multiple .gjf files) 
     if startjob + endjob == 0:
-        Multiple = False
+        multiple = False
         
     if startjob + endjob != 0:
-        Multiple = True
+        multiple = True
         
-    with open(filename + '.sh', 'w') as f:
+    with open(full_path + '.sh', 'w') as f:
         f.write('#$ -cwd \n')
         f.write('#$ -V\n')
         f.write('#$ -l h_rt=48:00:00\n')
         f.write('#$ -l h_vmem=' + str(vmem) + 'G\n')
         f.write('#$ -pe smp ' + str(nproc) + '\n')
         f.write('#$ -l disk=5G\n')
-        if Multiple:
+        if multiple:
             f.write('#$ -t ' + str(startjob) + '-' + str(endjob) + '\n')  # Create a task array
 
         f.write('module add gaussian\n')
         f.write('export GAUSS_SCRDIR=$TMPDIR\n')
-        f.write('g16 ' + filename + ('_$SGE_TASK_ID' * Multiple) + '.gjf\n')
-        f.write('rm *core* \n') #if job fails, this line cleans up messy core files
+        f.write('g16 ' + file + ('_$SGE_TASK_ID' * multiple) + '.gjf\n')
+        f.write('rm *core* *.sh.* \n') #if job fails, this line cleans up messy core files
         
     return    
     

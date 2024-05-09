@@ -1,19 +1,48 @@
 # plotting functions
 
 import numpy as np
-from mayavi import mlab
 from scipy.spatial import Delaunay
-
+from mayavi import mlab  
 from rdkit import Chem
 
 import gauops as gps
 import geoops as geo
+import processing as pro
 
-def plot_molecule_mayavi(filename, displacements=[0, 0, 0], size=2, alpha=1, real_size=True, greyscale=False, fig = None):
+def plot_data(args):
+
+    data = pro.reload_data_from_npz(args.filename)
+    dx_values, dy_values, dz_values, dyz_values, e_values, de_values = pro.shape_data(data)
+    
+    if args.plt_emax != 0:
+        dx_values, dy_values, dz_values, e_values = pro.mask_values(dx_values, dy_values, dz_values, e_values, args.plt_emax)
+        
+    fig = mlab.figure(bgcolor=(1, 1, 1), size=(800, 600))
+    plot_volume(dx_values, dy_values, dz_values, e_values, e_max=args.plt_emax, size=args.plt_size,  line_width = args.plt_line, alpha=args.plt_alpha, plot_style=args.plt_style, cmap=args.plt_cmap, fig = fig)
+
+    if args.mol != None:
+        plot_molecule(filename=args.mol, size = args.mol_size, alpha = args.mol_alpha, real_size = args.real_size, greyscale = args.greyscale, fig = fig)
+
+    if args.mol2_idx != 0:
+        if args.mol2 == None:
+            filename = args.mol
+        if args.mol2 != None:
+            filename = args.mol2
+            
+        plot_molecule(filename=args.mol2, displacements = data[args.mol2_idx,0:3], size = args.mol_size, alpha = args.mol_alpha, real_size = args.real_size, greyscale = args.greyscale, fig = fig)
+    mlab.show() 
+
+def plot_molecule(filename, displacements=[0, 0, 0], size=2, alpha=1, real_size=True, greyscale=False, fig = None):
     '''
     Plot a molecule from a Gaussian calculation using Mayavi.
     Args:
-        filename - the .log file you want to open
+        filename        - the .log file you want to open
+        displacements   - set of displacements to make to the moleucle in question in x/y/z-values
+        size            - the base size of the moleucle atoms
+        alpha           - transparency of the molecule 
+        real_size       - use real sized atoms, based on VdW radii
+        greyscale       - use greyscale for colouring molecule
+        fig             - handle of the mayavi figure to plot into
     '''
     colors = {
         'H': (1, 1, 1),        # white
@@ -45,11 +74,11 @@ def plot_molecule_mayavi(filename, displacements=[0, 0, 0], size=2, alpha=1, rea
         if len(parts) == 4:
             sz = size
             atom, x, y, z = parts[0], float(parts[1]) + dx, float(parts[2]) + dy, float(parts[3]) + dz
-            if real_size == True:
+            if real_size:
                 sz = (size ** 0.75) * (Chem.GetPeriodicTable().GetRvdw(atom))
             mlab.points3d(x, y, z, scale_factor=sz, color = color, resolution=20, transparent=True, opacity=alpha)
 
-def plot_volumetric_mayavi(dx_values, dy_values, dz_values, e_values, e_max=0, size=1, line_width = 2.0, alpha=0.5, plot_style='surface', cmap='plasma', fig = None):
+def plot_volume(dx_values, dy_values, dz_values, e_values, e_max=0, size=1, line_width = 2.0, alpha=0.5, plot_style='surface', cmap='plasma', fig = None):
     '''
     Create a 3D plot only showing the minimum energy for each unique (x, y) pair over all z-values.
     
