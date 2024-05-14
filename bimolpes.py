@@ -44,6 +44,6 @@ if __name__ == "__main__":
     print('| _ )_ _|  \/  |/ _ \| |  | _ \ __/ __|')
     print('| _ \| || |\/| | (_) | |__|  _/ _|\__ \\')
     print('|___/___|_|  |_|\___/|____|_| |___|___/')
-    print(f'\nVersion: 0.7; running on {platform.system()} {platform.version()}')
+    print(f'\nVersion: 0.8; running on {platform.system()} {platform.version()}')
     print(f'Authors: Dr. R.J.Mandle; University of Leeds, 2024\n')
     main()

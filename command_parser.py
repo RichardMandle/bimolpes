@@ -26,22 +26,21 @@ class BimolPESParser:
         write_parser.add_argument("-y", type=parse_dimension, default=(0.0, 0.0), help="Range for y dimension, specify as 'start end' or just 'value' to use '-value value'")
         write_parser.add_argument("-z", type=parse_dimension, default=(0.0, 0.0), help="Range for z dimension, specify as 'start end' or just 'value' to use '-value value'")
         write_parser.add_argument('-est', action='store_true', default=self.config.getboolean('GRID','EstimateGrid', fallback = False), help='Estimate grid dimensions from input file (experimental)')
-        write_parser.add_argument("-est_x", type=float, default=0.0, help="additional displacement in x dimension from estimated displacement")
-        write_parser.add_argument("-est_y", type=float, default=0.0, help="additional displacement in y dimension from estimated displacement")
-        write_parser.add_argument("-est_z", type=float, default=0.0, help="additional displacement in z dimension from estimated displacement")
+        write_parser.add_argument('-est_hemi', action='store_true', default=self.config.getboolean('GRID','EstimateGridHemisphere', fallback = False), help='When estimating grid, do both hemispheres (i.e. don\'t stop at z = 0!')
+        write_parser.add_argument("-est_disp", type=parse_resolution, default=self.config.get('GRID','AdditionalDisplacement', fallback = '0.0'), help="additional displacement from estimated grid;  provide one, two, or three values for x, y, and z respectively")
         write_parser.add_argument('-res', type=parse_resolution, default=self.config.get('GRID','Resolution', fallback = '1.0'), help='Resolution of the grid; provide one, two, or three values for x, y, and z respectively')
-
-        write_parser.add_argument('-xa', type=float, default=0.0, help='Angle to rotate mol. #2 by in X-axis, in degrees')
-        write_parser.add_argument('-ya', type=float, default=0.0, help='Angle to rotate mol. #2 by in Y-axis, in degrees')
-        write_parser.add_argument('-za', type=float, default=0.0, help='Angle to rotate mol. #2 by in Z-axis, in degrees')
-        
+        write_parser.add_argument('-rot', type=parse_resolution, default=self.config.get('GRID','Rotation', fallback = '0.0,0.0,0.0'), help='Angle to rotate mol. #2 by in in degrees; one, two, or three values for rotation about x, y, and z respectively ')
+        write_parser.add_argument('-backoff', action='store_true', default=self.config.getboolean('GRID','TurnOffBackUp', fallback = False), help='Turn off backing up data - default is to backup a given output directory to "directory.zip" rather than overwrite all the contents')
+              
         write_parser.add_argument('-min_dist', type=float, default=self.config.getfloat('GRID','MinDist', fallback = 3.0), help='Minimum intermolecular separation of molecules in grid, in Å (fallback = 3.0)')
         write_parser.add_argument('-max_dist', type=float, default=self.config.getfloat('GRID','MaxDist', fallback = 6.0), help='Maximum intermolecular separation of molecules in grid, in Å (fallback = 6.0)')
         
-        write_parser.add_argument('-mem', type=int, default=self.config.getint('GRID','RAM', fallback = 4), help='RAM for gaussian job, in GB (int; fallback = 4)')    
-        write_parser.add_argument('-cpu', type=int, default=self.config.getint('GRID','CPU', fallback = 4), help='CPU cores for gaussian job (int; fallback = 4)')     
-        write_parser.add_argument('-groute', type=str, default=self.config.get('GRID','GRoute', fallback = '#T B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ counterpoise=2'), help='Specify the full Gaussian route section; default: #T B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ Counterpoise=2')     
-            
+        write_parser.add_argument('-mem', type=int, default=self.config.getint('GAUSSIAN','RAM', fallback = 4), help='RAM for gaussian job, in GB (int; fallback = 4)')    
+        write_parser.add_argument('-cpu', type=int, default=self.config.getint('GAUSSIAN','CPU', fallback = 4), help='CPU cores for gaussian job (int; fallback = 4)')     
+        write_parser.add_argument('-groute', type=str, default=self.config.get('GAUSSIAN','GRoute', fallback = '#T B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ counterpoise=2'), help='Specify the full Gaussian route section; default: #T B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ Counterpoise=2')     
+        write_parser.add_argument('-gver', type=str, default=self.config.get('GAUSSIAN','Version', fallback = 'G16'), help='Specify Gaussian version used for calculations (str; fallback = G16)') 
+        write_parser.add_argument('-disk', type=str, default=self.config.get('GAUSSIAN','MaxDisk', fallback = '5'), help='Specify Max Disk option for Gaussian calculations in GB (str; fallback = 5)') 
+               
         write_parser.add_argument('-inp', type=str, default='', help='Gaussian .log file of OPTIMISED structure of molecule 1')    
         write_parser.add_argument('-inp2', type=str, default=None, help='Gaussian .log file of OPTIMISED structure of molecule 2 (optional, defaults to homo-bimolecular PES')    
         write_parser.add_argument('-out', type=str, default=None, help='Naming schema for output .gjf files (optional; defaults to mol1_mol2\mol1_mol2 <<TODO extending iteratively?>>)')   
@@ -64,35 +63,41 @@ class BimolPESParser:
         read_parser.add_argument('-dthr', type=float, default=self.config.getfloat('READ','DThr', fallback = 1.0), help='Distance cutoff for identifying discrete minima (float; fallback = 1.0)')           
         
         read_parser.set_defaults(func=self.command_functions['handle_read'])
-
         
     def setup_plot_parser(self):
         # Sub-parser for the plot command; first up, options for the 3d plot.
         plot_parser = self.subparsers.add_parser('plot', help='Plotting and visualising data using mayavi')
         plot_parser.add_argument('-filename', type=str, default='mydata', help='filename to use for saving .npz')  
         
-        plot_parser.add_argument('-plt_emax', type=float, default=0, help='Only show points where energy is below e_max (float)')    
-        plot_parser.add_argument('-plt_size', type=float, default=self.config.getfloat('PLOT','PltSize', fallback = 1), help='Size of grid energy points (float, default = 1)')    
-        plot_parser.add_argument('-plt_alpha', type=float, default=self.config.getfloat('PLOT','PltAlpha', fallback = 0.25), help='Alpha vlaues of grid energy points (float, default = 1)')    
-        plot_parser.add_argument('-plt_style', type=str, default=self.config.get('PLOT', 'PltStyle', fallback='points'), help='Select between \'surface\', \'points\', \'wireframe\', \'fancymesh\' etc; see mlab')
-        plot_parser.add_argument('-plt_line', type=float, default=self.config.getfloat('PLOT','LineWidth', fallback = 2.0), help='float; sets the line_width for some types of plot, e.g. \'wireframe\', \'fancymesh\'; see mlab docs')
-        
-        plot_parser.add_argument('-plt_cmap', type=str, default=self.config.get('PLOT', 'ColorMap', fallback='viridis'), help='Pass any valid matplotlib colourmap (cmap) to use in plotting')
-                    
-        # sub parts for drawing of molecule using matplotlib...
+        plot_parser.add_argument('-plt_emax', type=float, default=self.config.getfloat('PLOT','PltEMax', fallback = 0), help='Only show points where energy is below e_max (float; fallback = 0)')    
+        plot_parser.add_argument('-plt_size', type=float, default=self.config.getfloat('PLOT','PltSize', fallback = 1), help='Size of grid energy points (float; default = 1)')    
+        plot_parser.add_argument('-plt_alpha', type=float, default=self.config.getfloat('PLOT','PltAlpha', fallback = 0.25), help='Alpha vlaues of grid energy points (float; default = 1)')    
+        plot_parser.add_argument('-plt_style', type=str, default=self.config.get('PLOT', 'PltStyle', fallback='points'), help='Select between \'surface\', \'points\', \'wireframe\', \'fancymesh\' etc; see mlab (str; fallback = points)')
+        plot_parser.add_argument('-plt_line', type=float, default=self.config.getfloat('PLOT','LineWidth', fallback = 2.0), help='Sets the line_width for some types of plot, e.g. \'wireframe\', \'fancymesh\'; see mlab docs (float; fallback = 2.0)')
+        plot_parser.add_argument('-plt_cmap', type=str, default=self.config.get('PLOT', 'ColorMap', fallback='viridis'), help='Pass any valid matplotlib colourmap (cmap) to use in plotting (str; fallback = viridis)')
+        plot_parser.add_argument('-plt_res', type=float, default=self.config.get('PLOT', 'Resolution', fallback=20.0), help='Resolution of points/surface to use in plotting (float; fallback = 20.0)')
+               
+        # sub parts for drawing of molecule
         plot_parser.add_argument('-mol', type=str, default=None, help='Gaussian .log file for the molecule to draw on the PES')
         plot_parser.add_argument('-mol2', type=str, default=None, help='Gaussian .log file for the molecule to draw on the PES')
         plot_parser.add_argument('-mol2_idx', type=int, default=0, help='Draw a second molecule on the PES with the given index value')   
-        plot_parser.add_argument('-real_size', action='store_true', default=self.config.getboolean('PLOT','RealSize', fallback = False),  help='use more "realistic" atom sizes when drawing')
-        plot_parser.add_argument('-mol_size', type=float, default=2, help='Size of \'atoms\' in molecule (float, default = 128)')    
+        plot_parser.add_argument('-mol_size', type=float, default=self.config.getfloat('PLOT','MolSize', fallback = 2), help='Size of \'atoms\' in molecule (float, default = 128)')    
+        plot_parser.add_argument('-mol_real_size', action='store_true', default=self.config.getboolean('PLOT','RealSize', fallback = False),  help='use more "realistic" atom sizes when drawing')
         plot_parser.add_argument('-mol_alpha', type=float, default=self.config.getfloat('PLOT','MolAlpha', fallback = 1), help='Alpha vlaues of atoms in molecule (float, default = 1)')    
-        plot_parser.add_argument('-greyscale', action='store_true', default=self.config.getboolean('PLOT','Greyscale', fallback = False), help='Draw the molecule(s) in greyscale')
+        plot_parser.add_argument('-mol_grey', action='store_true', default=self.config.getboolean('PLOT','Greyscale', fallback = False), help='Draw the molecule(s) in greyscale')
 
         plot_parser.set_defaults(func=self.command_functions['plot_data'])
 
     def get_parser(self):
-        return self.parser
-        
+        '''
+        Attempt to gracefully handle errors if strange things are passed as arguments.
+        '''
+        try:
+            return self.parser
+        except argparse.ArgumentError as e:
+            print(f"Argument error: {e}")
+            self.parser.print_help()
+            
 def parse_dimension(arg_value):
     '''
     Parsing function; splits input allowing many delimiters, returns x/y/z limits

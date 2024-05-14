@@ -3,28 +3,64 @@
 import os
 import numpy as np
 import zipfile
-
+import shutil
 import gauops as gps
 
 def handle_read(args):
-    # master function; reads data, saves data, prints info on minima, .
-   
-    if args.reload:
-        data = reload_data_from_npz(args.filename)
-    else:
-        data = process_files(path=args.path, method=args.method)
-    
-    if not args.nosave:
-        save_data_to_npz(args.filename, data)
-        
-    dx_values, dy_values, dz_values, dyz_values, e_values, de_values = shape_data(data)
-       
-    minima_list = find_local_minima(data, num_minima = args.minima, e_threshold = args.ethr , d_threshold = args.dthr)
-    
-    minima_indices = find_indices_of_minima(data, minima_list)
-    
-    print_minima_report(minima_list, minima_indices)
 
+    # master function; reads data, saves data, prints info on minima, .
+    try:
+        if args.reload:
+            try:
+                data = reload_data_from_npz(args.filename)
+            except FileNotFoundError:
+                print(f"Error: The file {args.filename} does not exist.")
+                return
+            except Exception as e:
+                print(f"An error occurred while loading the file: {e}")
+                return
+        else:
+            try:
+                data = process_files(path=args.path, method=args.method)
+            except Exception as e:
+                print(f"An error occurred during data processing: {e}")
+                return
+        
+        if not args.nosave:
+            try:
+                save_data_to_npz(args.filename, data)
+            except Exception as e:
+                print(f"An error occurred while saving the data: {e}")
+                return
+            
+        dx_values, dy_values, dz_values, dyz_values, e_values, de_values = shape_data(data)
+        
+        minima_list = find_local_minima(data, num_minima = args.minima, e_threshold = args.ethr , d_threshold = args.dthr)
+        
+        minima_indices = find_indices_of_minima(data, minima_list)
+        
+        print_minima_report(minima_list, minima_indices)
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+def backup_existing_directory(directory):
+    '''
+    Rather than blindly overwriting existing outputs, this function will
+    automatically backup a directory of grid outputs to a zip file.
+    
+    Args:
+        directory - Directory to backup
+    '''
+    backup_num = 1
+    backup_zip = f"{directory}_bak_{backup_num}.zip"
+    
+    while os.path.exists(backup_zip): # Increment the backup number until we find an available name
+        backup_num += 1
+        backup_zip = f"{directory}_bak_{backup_num}.zip"
+    
+    shutil.make_archive(directory + f"_bak_{backup_num}", 'zip', directory)
+    print(f"Existing directory {directory} backed up to {backup_zip}")
+        
 def get_output_filename(outname=None, filename=None, filename2=None):
     """
     Generates an appropriate output filename based on the inputs.
@@ -52,6 +88,7 @@ def get_output_filename(outname=None, filename=None, filename2=None):
             outname = "default_filename"
 
     print(f"Will write data to {outname}")
+    
     return outname
     
 def mask_values(dx_values, dy_values, dz_values, e_values, e_max):

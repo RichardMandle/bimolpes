@@ -60,31 +60,31 @@ def read_gaussian_route_section(file_path):
 
     return(input_options) 
 	
-def write_gjf(frag1, 
+def write_gjf(args, 
+              frag1, 
               frag2,
               displacement,
-              nproc=4, 
-              vmem=4, 
-              groute='#T B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ counterpoise=2',
               file_name='test'):
     '''
     Tool for writing two molecular geometries (frag1, frag2) into a gaussian .gjf input file.
     
     Args:
+        args            - arguments from bimolpes.py; contains info on CPU cores, memory, maxdisk, Gaussian route.
         frag1(2)        - fragment 1 (2) XYZ information formatted as per .gjf file with fragment=XYZ
         displacement    - job name, but with displacement coordinates encoded
-        nproc           - number of CPU cores to use per job
-        vmem            - ammount of ram to use (GB)function
-        groute          - gaussian route information; e.g. B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ counterpoise=2
         file_name       - output file name of .gjf file
+        
+    Discussion:
+        The spin/charge parameter is hardcoded as '0 1'; should this be '0 1 0 1 0 1', as we have a bimolecular .gjf?
+        It might also be worth allowing the user to pass a custom spin/charge here.
     '''
     
     with open(file_name + '.gjf', 'w') as f:
-        f.write('%nprocshared=' + str(nproc) + '\n')
-        f.write('%mem=' + str(vmem) + 'GB\n')
-        f.write(groute + '\n\n') 
+        f.write(f'%nprocshared={args.cpu}\n')
+        f.write(f'%mem={args.mem}GB\n')
+        f.write(f'{args.groute} maxdisk={args.disk}GB\n\n') 
         f.write(displacement + '\n\n')
-        f.write('0 1\n')
+        f.write('0 1\n') # Here we provide spin/charge info; might want to allow flexibility here
         
         for i, atom in enumerate(frag1 + frag2):
             f.write(atom)
@@ -92,22 +92,20 @@ def write_gjf(frag1,
         f.write('\n\n')
     return file_name
 
-def make_sge_job(dir_path='noname', file ='noname', vmem=4, nproc=4, startjob=0, endjob=0):
+def make_sge_job(args, outname, startjob=0, endjob=0):
     """
     Generate a job script for running a Gaussain job on ARC (the UoL compute clusters).
     
     Args:
-        filename (str): The name of the job script file (default: 'noname').
-        vmem (str): The virtual memory allocation for each job in GB(default: '8').
-        nproc (int): The number of processors to use for each job (default: 8).
+        args:           command line arguments passed from elsewhere.
+        outname (str): The name of the job script file (default: 'noname').
         startjob (int): The starting index of the task array (default: 0).
         endjob (int): The ending index of the task array (default: 0).
 
     Returns:
         None
     """
-    
-    full_path = os.path.join(dir_path, file)
+    file_name, _ = os.path.splitext(os.path.basename(outname))
 
     # Decide if we have a task array (i.e. multiple .gjf files) 
     if startjob + endjob == 0:
@@ -116,19 +114,20 @@ def make_sge_job(dir_path='noname', file ='noname', vmem=4, nproc=4, startjob=0,
     if startjob + endjob != 0:
         multiple = True
         
-    with open(full_path + '.sh', 'w') as f:
+    with open(outname + '.sh', 'w') as f:
         f.write('#$ -cwd \n')
         f.write('#$ -V\n')
         f.write('#$ -l h_rt=48:00:00\n')
-        f.write('#$ -l h_vmem=' + str(vmem) + 'G\n')
-        f.write('#$ -pe smp ' + str(nproc) + '\n')
-        f.write('#$ -l disk=5G\n')
+        f.write(f'#$ -l h_vmem={args.mem}G\n')
+        f.write(f'#$ -pe smp {args.cpu}\n')
+        f.write(f'#$ -l disk={args.disk}G\n')
+        
         if multiple:
-            f.write('#$ -t ' + str(startjob) + '-' + str(endjob) + '\n')  # Create a task array
+            f.write(f'#$ -t {startjob}-{endjob}\n')  # Create a task array
 
         f.write('module add gaussian\n')
         f.write('export GAUSS_SCRDIR=$TMPDIR\n')
-        f.write('g16 ' + file + ('_$SGE_TASK_ID' * multiple) + '.gjf\n')
+        f.write(str(args.gver) + ' ' + str(file_name) + ('_$SGE_TASK_ID' * multiple) + '.gjf\n')
         f.write('rm *core* *.sh.* \n') #if job fails, this line cleans up messy core files
         
     return    
