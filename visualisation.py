@@ -27,8 +27,16 @@ def plot_data(args):
         dx_values, dy_values, dz_values, e_values = pro.mask_values(dx_values, dy_values, dz_values, e_values, args.plt_emax)
         
     fig = mlab.figure(bgcolor=(1, 1, 1), size=(800, 600))
-    plot_volume(args, dx_values, dy_values, dz_values, e_values, fig = fig) # plot the volumetric surface here.
-
+    
+    if args.plt_flipz:
+        dz_values = - dz_values # flip them so the molecule is "on top" of the surface; aesthetic feature 
+    
+    if not args.vis_plt:
+        plot_volume(args, dx_values, dy_values, dz_values, e_values, fig = fig) # plot the volumetric surface here.
+    
+    if args.vis_plt:
+        plot_grid(args, fig = fig) # used to visualise the grid (new function)
+    
     if args.mol != None:
         plot_molecule(args, filename=args.mol, fig = fig)
 
@@ -39,7 +47,28 @@ def plot_data(args):
             filename = args.mol2
             
         plot_molecule(args, filename=filename, displacements = data[args.mol2_idx,0:3], fig = fig)
-    mlab.show() 
+    mlab.show()   
+
+def plot_grid(args, fig = None):
+    '''
+    Little function for visuaising the grid of translations used in a bimolpes calculation, with a molecule at the centre.
+    
+    Probably remove this from production verseion?
+    '''
+    args.res = np.array([2, 2, 2])
+    args.x = args.vis_plt_x
+    args.y = args.vis_plt_y
+    args.z = args.vis_plt_z
+        
+    args.min_dist = 5
+    args.max_dist = 7
+    
+    grid = geo.gen_grid(args)
+
+    x, y, z = zip(*grid)
+
+    mlab.points3d(x, y, z, scale_factor=0.33, opacity = 0.25)
+    
 
 def plot_molecule(args, filename, displacements=[0, 0, 0], real_size=True, greyscale=False, fig = None):
     '''
@@ -85,6 +114,8 @@ def plot_molecule(args, filename, displacements=[0, 0, 0], real_size=True, greys
             color =  (1,0,0.8) # pink! why not
         if args.mol_grey:
             color = tuple([np.mean(color)]*3)
+        if args.mol_white:
+            color = tuple([1,1,1])
         parts = g.split()
         if len(parts) == 4:
             sz = args.mol_size
@@ -115,10 +146,16 @@ def plot_volume(args, dx_values, dy_values, dz_values, e_values, fig = None):
     
     if fig is None:
         fig = mlab.figure(bgcolor=(1, 1, 1), size=(800, 600))
+    
+    if args.plt_max == 0:
+        args.plt_max = None
+        
+    if args.plt_min == 0:
+        args.plt_min = None
 
     points2D = np.vstack([dx_values, dy_values]).T
     tri = Delaunay(points2D)
-    mesh = mlab.triangular_mesh(dx_values, dy_values, dz_values, tri.simplices, tube_radius = args.plt_line, scale_factor = args.plt_size, representation = args.plt_style, scalars=e_values, colormap=args.plt_cmap, opacity=args.plt_alpha, resolution = args.plt_res)
+    mesh = mlab.triangular_mesh(dx_values, dy_values, dz_values, tri.simplices, tube_radius = args.plt_line, scale_factor = args.plt_size, representation = args.plt_style, scalars=e_values, colormap=args.plt_cmap, opacity=args.plt_alpha, resolution = args.plt_res, vmax = args.plt_max, vmin = args.plt_min)
 
     if args.plt_style == 'points':
         mesh.actor.property.point_size = args.plt_size

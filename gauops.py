@@ -79,6 +79,16 @@ def write_gjf(args,
         It might also be worth allowing the user to pass a custom spin/charge here.
     '''
     
+    def format_coordinate(coord):
+        try:
+            float_val = float(coord)
+            if float_val.is_integer():
+                return "{:d}".format(int(float_val))
+            else:
+                return "{:.6e}".format(float_val)
+        except ValueError:
+            return str(coord)
+
     with open(file_name + '.gjf', 'w') as f:
         f.write(f'%nprocshared={args.cpu}\n')
         f.write(f'%mem={args.mem}GB\n')
@@ -86,12 +96,15 @@ def write_gjf(args,
         f.write(displacement + '\n\n')
         f.write('0 1\n') # Here we provide spin/charge info; might want to allow flexibility here
         
-        for i, atom in enumerate(frag1 + frag2):
-            f.write(atom)
+        for atom in frag1 + frag2:
+            parts = atom.split()
+            formatted_parts = [parts[0], parts[1]] + [format_coordinate(coord) for coord in parts[2:]]
+            formatted_atom = " ".join(formatted_parts)
+            f.write(formatted_atom)
             f.write('\n')
         f.write('\n\n')
     return file_name
-
+    
 def make_sge_job(args, outname, startjob=0, endjob=0):
     """
     Generate a job script for running a Gaussain job on ARC (the UoL compute clusters).
@@ -135,17 +148,19 @@ def make_sge_job(args, outname, startjob=0, endjob=0):
 def extract_complexation_energy(log_file_path):
     '''
     Return the complexation energy (in kcal mol-1) from a Gaussian .log file
+    looks for "(corrected)" energy, buy you could use "(raw)" if you wanted (should that be an option?)
     '''
     complexation_energy = None
     with open(log_file_path, 'r') as file:
         for line in file:
             if "complexation energy" in line:
-                parts = line.split('=')
-                try:
-                    energy_str = parts[1].split()[0]  # Get the first part after '=', which should be the energy value
-                    complexation_energy = float(energy_str.strip())
-                except (IndexError, ValueError):
-                    print("Error parsing complexation energy from line:", line)
+                if "(corrected)" in line:
+                    parts = line.split('=')
+                    try:
+                        energy_str = parts[1].split()[0]  # Get the first part after '=', which should be the energy value
+                        complexation_energy = float(energy_str.strip())
+                    except (IndexError, ValueError):
+                        print("Error parsing complexation energy from line:", line)
     return complexation_energy
 
 def extract_final_energy(log_file_path):

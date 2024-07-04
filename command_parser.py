@@ -35,9 +35,9 @@ class BimolPESParser:
         write_parser.add_argument('-min_dist', type=float, default=self.config.getfloat('GRID','MinDist', fallback = 3.0), help='Minimum intermolecular separation of molecules in grid, in Å (fallback = 3.0)')
         write_parser.add_argument('-max_dist', type=float, default=self.config.getfloat('GRID','MaxDist', fallback = 6.0), help='Maximum intermolecular separation of molecules in grid, in Å (fallback = 6.0)')
         
-        write_parser.add_argument('-mem', type=int, default=self.config.getint('GAUSSIAN','RAM', fallback = 4), help='RAM for gaussian job, in GB (int; fallback = 4)')    
-        write_parser.add_argument('-cpu', type=int, default=self.config.getint('GAUSSIAN','CPU', fallback = 4), help='CPU cores for gaussian job (int; fallback = 4)')     
-        write_parser.add_argument('-groute', type=str, default=self.config.get('GAUSSIAN','GRoute', fallback = '#T B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ counterpoise=2'), help='Specify the full Gaussian route section; default: #T B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ Counterpoise=2')     
+        write_parser.add_argument('-mem', type=int, default=self.config.getint('GAUSSIAN','RAM', fallback = 8), help='RAM for gaussian job, in GB (int; fallback = 8)')    
+        write_parser.add_argument('-cpu', type=int, default=self.config.getint('GAUSSIAN','CPU', fallback = 8), help='CPU cores for gaussian job (int; fallback = 8)')     
+        write_parser.add_argument('-groute', type=str, default=self.config.get('GAUSSIAN','GRoute'), help='Specify the full Gaussian route section; default: #T B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ Counterpoise=2')     
         write_parser.add_argument('-gver', type=str, default=self.config.get('GAUSSIAN','Version', fallback = 'G16'), help='Specify Gaussian version used for calculations (str; fallback = G16)') 
         write_parser.add_argument('-disk', type=str, default=self.config.get('GAUSSIAN','MaxDisk', fallback = '5'), help='Specify Max Disk option for Gaussian calculations in GB (str; fallback = 5)') 
                
@@ -46,6 +46,7 @@ class BimolPESParser:
         write_parser.add_argument('-out', type=str, default=None, help='Naming schema for output .gjf files (optional; defaults to mol1_mol2\mol1_mol2 <<TODO extending iteratively?>>)')   
         write_parser.add_argument('-zip', action='store_const', const=False, default=True, help='Don\'t zip output!')
         
+        write_parser.add_argument('-frz', type=parse_atom_numbers, default='', help='Int; Specify atom numbers to freeze during the calculation. This is useful if also optimising; pass a set of 3 or more non-colinear points to freeze a molecule but allow (some) internal bond rotations etc. Can be done on molecule #1 and #2; be mindful that the atom numbers need to be set by checking the number of atoms in the input .log file(s). Allows partial optimisation (a semi-relaxed scan?) i.e. molecules frozen in place centre-to-centre but most atoms/bonds allowed to relax.')
         write_parser.set_defaults(func=self.command_functions['write_grid'])
 
     def setup_read_parser(self):
@@ -76,7 +77,10 @@ class BimolPESParser:
         plot_parser.add_argument('-plt_line', type=float, default=self.config.getfloat('PLOT','LineWidth', fallback = 2.0), help='Sets the line_width for some types of plot, e.g. \'wireframe\', \'fancymesh\'; see mlab docs (float; fallback = 2.0)')
         plot_parser.add_argument('-plt_cmap', type=str, default=self.config.get('PLOT', 'ColorMap', fallback='viridis'), help='Pass any valid matplotlib colourmap (cmap) to use in plotting (str; fallback = viridis)')
         plot_parser.add_argument('-plt_res', type=float, default=self.config.get('PLOT', 'Resolution', fallback=20.0), help='Resolution of points/surface to use in plotting (float; fallback = 20.0)')
-               
+        plot_parser.add_argument('-plt_flipz', action='store_true', default=self.config.getboolean('PLOT','FlipZ', fallback = False), help='Flip data about the Z-axis; effectively places the molecule "on top" of the surface data, just a visual effect for publications.')
+        plot_parser.add_argument('-plt_max', type=float, default=self.config.get('PLOT', 'VMax', fallback=0), help='VMax of points/surface to use in plotting (float; fallback = 0)')
+        plot_parser.add_argument('-plt_min', type=float, default=self.config.get('PLOT', 'VMin', fallback=0), help='VMin of points/surface to use in plotting (float; fallback = 0)')    
+        
         # sub parts for drawing of molecule
         plot_parser.add_argument('-mol', type=str, default=None, help='Gaussian .log file for the molecule to draw on the PES')
         plot_parser.add_argument('-mol2', type=str, default=None, help='Gaussian .log file for the molecule to draw on the PES')
@@ -85,9 +89,17 @@ class BimolPESParser:
         plot_parser.add_argument('-mol_real_size', action='store_true', default=self.config.getboolean('PLOT','RealSize', fallback = False),  help='use more "realistic" atom sizes when drawing')
         plot_parser.add_argument('-mol_alpha', type=float, default=self.config.getfloat('PLOT','MolAlpha', fallback = 1), help='Alpha vlaues of atoms in molecule (float, default = 1)')    
         plot_parser.add_argument('-mol_grey', action='store_true', default=self.config.getboolean('PLOT','Greyscale', fallback = False), help='Draw the molecule(s) in greyscale')
+        plot_parser.add_argument('-mol_white', action='store_true', default=self.config.getboolean('PLOT','ColorWhite', fallback = False), help='Draw the molecule(s) with all atoms coloured white')
+        
+        # sub parts used for making fairly specific figures
+        plot_parser.add_argument('-vis_plt', action='store_const', const=True, default=False, help='if true, trigger doing a vis_plt')
+        plot_parser.add_argument("-vis_plt_x", type=parse_dimension, default=(0.0, 0.0), help="Range for x dimension, specify as 'start end' or just 'value' to use '-value value'")
+        plot_parser.add_argument("-vis_plt_y", type=parse_dimension, default=(0.0, 0.0), help="Range for y dimension, specify as 'start end' or just 'value' to use '-value value'")
+        plot_parser.add_argument("-vis_plt_z", type=parse_dimension, default=(0.0, 0.0), help="Range for z dimension, specify as 'start end' or just 'value' to use '-value value'")
+        plot_parser.add_argument("-vis_plt_size", type=float, default=2.0, help="Range for z dimension, specify as 'start end' or just 'value' to use '-value value'")
 
         plot_parser.set_defaults(func=self.command_functions['plot_data'])
-
+        
     def get_parser(self):
         '''
         Attempt to gracefully handle errors if strange things are passed as arguments.
@@ -97,6 +109,24 @@ class BimolPESParser:
         except argparse.ArgumentError as e:
             print(f"Argument error: {e}")
             self.parser.print_help()
+
+
+            
+def parse_atom_numbers(num_value):
+    '''
+    Parsing function that takes a string of numbers separated by various delimiters
+    and splits them into a list of floats.
+    
+    Args:
+        num_value (str): A string containing numbers separated by delimiters.
+    
+    Returns:
+        list of float: A list of parsed numbers as floats.
+    '''
+    
+    values = re.split(r'[^\d.-]+', num_value)
+    
+    return list(map(int, filter(None, values)))
             
 def parse_dimension(arg_value):
     '''

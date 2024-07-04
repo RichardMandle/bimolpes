@@ -29,7 +29,7 @@ def write_grid(args):
     '''
     outpath = pro.get_output_filename(args.out, args.inp, args.inp2)
     outpath = os.path.abspath(outpath)
-    
+       
     if os.path.exists(outpath):
         if not args.backoff:
             pro.backup_existing_directory(outpath)
@@ -45,9 +45,11 @@ def write_grid(args):
     grid = gen_grid(args)     # get a grid using the user supplied spacings.
     
     outname, count =  create_inputs(args, grid = grid, outname = file_plus_path)
-    
+    if args.frz:
+        print(f'Freezing Atoms: {args.frz}')
+        
     gps.make_sge_job(args, outname = file_plus_path, startjob=1, endjob=count) # make the SGE job
-    
+
     if args.zip: # bundle into .zip for unleashing on HPC (quicker to upload one file than 100k small ones)
         pro.zip_files(dir_path = outpath, zip_file = outpath, ext =('gjf','sh'))
 
@@ -88,10 +90,10 @@ def create_inputs(args, grid, count = 1, outname = None):
     if (np.abs(rot_xyz[0]) + np.abs(rot_xyz[1]) + np.abs(rot_xyz[2])) != 0:
         frag2_geometry = rotate_coordinates(frag2_geometry,  x_angle=rot_xyz[0], y_angle=rot_xyz[1], z_angle=rot_xyz[2])
 
-    frag1 = add_fragment_label(geometry,1)
+    frag1, atom_count = add_fragment_label(args, geometry, 1, atom_count = 0)
     
     for gri in grid:
-        frag2 = add_fragment_label(translate_coordinates(frag2_geometry, dx=gri[0], dy=gri[1], dz=gri[2]), 2)
+        frag2, atom_count = add_fragment_label(args, translate_coordinates(frag2_geometry, dx=gri[0], dy=gri[1], dz=gri[2]), 2, atom_count = atom_count)
 
         if not check_fragments_too_close(frag1, frag2, min_cutoff=args.min_dist):
             if not check_fragments_too_far(frag1, frag2, max_cutoff=args.max_dist):
@@ -221,27 +223,34 @@ def gen_grid(args):
     
     return grid
 
-def add_fragment_label(geometry, fragment_number=1):
+def add_fragment_label(args, geometry, fragment_number=1, atom_count = 0):
     """
     Adds "(Fragment={fragment_number})" after the atomic symbol in each line of the geometry.
     
     Args:
+        args: Here we mainly want the freeze atoms 
         geometry: List of strings representing the atoms and their coordinates.
         fragment_number: the fragment number to add (e.g. 1, 2 etc.)
+        atom_count: We'll use this to keep track of atom numbers between fragments 1 and 2 (because #1 of 2 is numbered as the last one in 1 + 1...)
     Returns:
         Updated geometry with "(Fragment=1)" labels as a list of strings.
     """
     updated_geometry = []
 
-    for line in geometry:
+    for x, line in enumerate(geometry):
+        atom_count += 1 # add
         parts = line.split()
         if len(parts) == 4:
             atom, x, y, z = parts[0], parts[1], parts[2], parts[3]
             atom_with_fragment = f"{atom}(Fragment={fragment_number})"
-            new_line = f"{atom_with_fragment} {x} {y} {z}"
+            if atom_count in args.frz:
+                atom_with_fragment = atom_with_fragment + ' -1  '
+            if not atom_count in args.frz:
+                atom_with_fragment = atom_with_fragment + ' 0   '
+            new_line = f"{atom_with_fragment}   {x} {y} {z}"
             updated_geometry.append(new_line)
 
-    return updated_geometry
+    return updated_geometry, atom_count
 
 
 def translate_coordinates(geometry, dx=0, dy=0, dz=0):
@@ -319,8 +328,8 @@ def check_fragments_too_close(frag1, frag2, min_cutoff=2):
     """
     for atom1 in frag1:
         for atom2 in frag2:
-            coords1 = tuple(map(float, atom1.split()[1:4]))
-            coords2 = tuple(map(float, atom2.split()[1:4]))
+            coords1 = tuple(map(float, atom1.split()[2:5]))
+            coords2 = tuple(map(float, atom2.split()[2:5]))
             if distance(coords1, coords2) < min_cutoff:
                 return True
     return False

@@ -3,6 +3,7 @@
 
 import platform
 import configparser
+import os
 
 # import our own modules
 import geoops as geo
@@ -23,7 +24,8 @@ def main():
     '''
     
     config = configparser.ConfigParser()
-    config.read('config.ini')
+    config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),'config.ini')
+    config.read(config_file)
     
     command_functions = {
         'write_grid': geo.write_grid,
