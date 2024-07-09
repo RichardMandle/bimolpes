@@ -71,7 +71,7 @@ def write_gjf(args,
     Args:
         args            - arguments from bimolpes.py; contains info on CPU cores, memory, maxdisk, Gaussian route.
         frag1(2)        - fragment 1 (2) XYZ information formatted as per .gjf file with fragment=XYZ
-        displacement    - job name, but with displacement coordinates encoded
+        displacement    - job name, but with displacement coordinates encoded as dx/y/z and rotation as rx/y/z
         file_name       - output file name of .gjf file
         
     Discussion:
@@ -92,10 +92,15 @@ def write_gjf(args,
     with open(file_name + '.gjf', 'w') as f:
         f.write(f'%nprocshared={args.cpu}\n')
         f.write(f'%mem={args.mem}GB\n')
+        
+        if args.chk:  # write our .chk checkpoint if requested
+            chk_filename = os.path.basename(file_name)  # get the base name of the file
+            f.write(f'%chk={chk_filename}.chk\n')
+            
         f.write(f'{args.groute} maxdisk={args.disk}GB\n\n') 
         f.write(displacement + '\n\n')
         f.write('0 1\n') # Here we provide spin/charge info; might want to allow flexibility here
-        
+
         for atom in frag1 + frag2:
             parts = atom.split()
             formatted_parts = [parts[0], parts[1]] + [format_coordinate(coord) for coord in parts[2:]]
@@ -121,10 +126,10 @@ def make_sge_job(args, outname, startjob=0, endjob=0):
     file_name, _ = os.path.splitext(os.path.basename(outname))
 
     # Decide if we have a task array (i.e. multiple .gjf files) 
-    if startjob + endjob == 0:
+    if startjob == endjob:
         multiple = False
         
-    if startjob + endjob != 0:
+    if startjob != endjob:
         multiple = True
         
     with open(outname + '.sh', 'w') as f:
@@ -140,9 +145,15 @@ def make_sge_job(args, outname, startjob=0, endjob=0):
 
         f.write('module add gaussian\n')
         f.write('export GAUSS_SCRDIR=$TMPDIR\n')
-        f.write(str(args.gver) + ' ' + str(file_name) + ('_$SGE_TASK_ID' * multiple) + '.gjf\n')
+        
+        f.write(f'{args.gver} {file_name}{"_$SGE_TASK_ID" if multiple else ""}.gjf\n')
+        
         f.write('rm *core* *.sh.* \n') #if job fails, this line cleans up messy core files
         
+        if args.chk: # if requested checkpoint we likely want the formatted checkpoint too; so do this:
+            chk_filename = os.path.basename(file_name)
+            f.write(f'formchk {chk_filename}{"_$SGE_TASK_ID" if multiple else ""}.chk {chk_filename}{"_$SGE_TASK_ID" if multiple else ""}.fchk')
+
     return    
     
 def extract_complexation_energy(log_file_path):
@@ -180,19 +191,27 @@ def extract_final_energy(log_file_path):
                     final_energy = None
     return final_energy
 
-def extract_translation_coordinates(file_path):
+def extract_translation_and_rotation_coordinates(file_path):
     '''
-    Read the translation coordinates from the Gaussian log file header (We wrote these earlier for this reason)
+    Read the translation and rotation coordinates from the Gaussian log file header.
+    
+    ARGS:
+        file_path - its the file you are reading!
+    RETURNS:
+        coordinates - the translation coordinates of displacement (x /y / z)
+        rotations   - the rotation applied (x / y  /z)
     '''
     coordinates = []
+    rotations = []
     with open(file_path, 'r') as file:
         for line in file:
             if line.strip().startswith('dx='):
-                match = re.search(r'dx=(-?\d+\.?\d*)/dy=(-?\d+\.?\d*)/dz=(-?\d+\.?\d*)', line.strip()) # Use regex to find the dx, dy, dz values
+                match = re.search(r'dx=(-?\d+\.?\d*)/dy=(-?\d+\.?\d*)/dz=(-?\d+\.?\d*)/rx=(-?\d+\.?\d*)/ry=(-?\d+\.?\d*)/rz=(-?\d+\.?\d*)', line.strip()) # Use regex to find the dx, dy, dz, rx, ry, rz values
                 if match:
-                    dx, dy, dz = map(float, match.groups())
+                    dx, dy, dz, rx, ry, rz = map(float, match.groups())
                     coordinates.append((dx, dy, dz))
-    return coordinates
+                    rotations.append((rx, ry, rz))
+    return coordinates, rotations
 
 def find_log_files(directory):
     # finds .log files and NOWT ELSE

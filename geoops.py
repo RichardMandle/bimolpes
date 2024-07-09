@@ -19,6 +19,44 @@ def split_to_xyz(values_to_split):
         split_values[2] = values_to_split[2]                                     # if 3 res passed, x!=y!=z
         
     return np.array(split_values)
+
+def write_minima_files(args, minima_list):
+    """
+    Write Gaussian input files for each minima in the minima_list.
+    
+    Args:
+        args: Parsed command line arguments.
+        minima_list: List of minima with their coordinates and energies.
+    """
+    if args.mol is None:
+        raise ValueError("Error: Ye have to specify a primary molecule file (-mol)")
+        
+    #get an output path to write to
+    file_name = f'{args.filename}_min' # append _min sow we know we are dealing with some generated minima
+    os.makedirs(file_name, exist_ok=True)
+    gps.clean_path(file_name) # clean that directory
+    
+    for i, minima in enumerate(minima_list):
+        count = i + 1
+        displacement = f'dx={minima[0]}/dy={minima[1]}/dz={minima[2]}/rx={minima[3]}/ry={minima[4]}/rz={minima[5]}/'
+        this_file_name = os.path.join(file_name, os.path.basename(f'{file_name}_{count}'))
+
+        # get geometries from user supplied file(s)
+        frag1 = generate_coords(gps.get_geometries(args.mol)[-1])
+        frag2 = generate_coords(gps.get_geometries(args.mol2)) if args.mol2 else frag1
+        
+        # Look at rotation in the displacement line of our .log file; replicate it here
+        if (np.abs(minima[3]) + np.abs(minima[4]) + np.abs(minima[5])) != 0:
+            frag2 = rotate_coordinates(args, frag2,  x_angle=minima[3], y_angle=minima[4], z_angle=minima[5])
+            
+        # add fragment labels 
+        frag1, atom_count = add_fragment_label(args, frag1, 1, atom_count = 0)
+        frag2, atom_count = add_fragment_label(args, translate_coordinates(frag2, dx=minima[0], dy=minima[1], dz=minima[2]), 2, atom_count = atom_count)
+        
+        gps.write_gjf(args, frag1, frag2, displacement, this_file_name)
+        
+    gps.make_sge_job(args, outname = os.path.join(file_name, os.path.basename(file_name)), startjob=1, endjob=count) # make the SGE job
+    print(f'Wrote {count} minima to new .gjf files in {file_name}')
     
 def write_grid(args):
     '''
@@ -27,7 +65,7 @@ def write_grid(args):
     Generates a grid of displacements, handling calls to create_inputs
     and writing to .gjf, .sh and .zip files as needed.
     '''
-    outpath = pro.get_output_filename(args.out, args.inp, args.inp2)
+    outpath = pro.get_output_filename(args.out, args.mol, args.mol2)
     outpath = os.path.abspath(outpath)
        
     if os.path.exists(outpath):
@@ -40,7 +78,7 @@ def write_grid(args):
     file_plus_path = os.path.join(outpath, os.path.basename(outpath))
 
     if args.est:
-        args.x, args.y, args.z = estimate_grid_from_glog(args)          # here, estimate the x/y/z ranges from the input file (args.inp) using estimate_grid_from_glog.
+        args.x, args.y, args.z = estimate_grid_from_glog(args)          # here, estimate the x/y/z ranges from the input file (args.mol) using estimate_grid_from_glog.
         
     grid = gen_grid(args)     # get a grid using the user supplied spacings.
     
@@ -75,20 +113,20 @@ def create_inputs(args, grid, count = 1, outname = None):
     '''
 
     if outname is None:
-        outname = os.path.splitext(os.path.basename(args.inp))[0] + '_grid'
+        outname = os.path.splitext(os.path.basename(args.mol))[0] + '_grid'
        
     gps.clean_path(outname) # tidy directory
     
     too_close = too_far = 0 # these are just counters that we'll use to feedback (print) why some things were rejected
     
-    geometry = frag2_geometry = generate_coords(gps.get_geometries(args.inp)[-1]) # have both geometries the same for now, update below
+    geometry = frag2_geometry = generate_coords(gps.get_geometries(args.mol)[-1]) # have both geometries the same for now, update below
     
-    if (args.inp2 != None) | ((args.inp2 != args.inp) & (args.inp2 != None)):
-        frag2_geometry = generate_coords(gps.get_geometries(args.inp2)[-1])
+    if (args.mol2 != None) | ((args.mol2 != args.mol) & (args.mol2 != None)):
+        frag2_geometry = generate_coords(gps.get_geometries(args.mol2)[-1])
 
     rot_xyz = split_to_xyz(args.rot) # take rotation from arguments and split, however its delimited, and rotate as/if needed.
     if (np.abs(rot_xyz[0]) + np.abs(rot_xyz[1]) + np.abs(rot_xyz[2])) != 0:
-        frag2_geometry = rotate_coordinates(frag2_geometry,  x_angle=rot_xyz[0], y_angle=rot_xyz[1], z_angle=rot_xyz[2])
+        frag2_geometry = rotate_coordinates(args, frag2_geometry,  x_angle=rot_xyz[0], y_angle=rot_xyz[1], z_angle=rot_xyz[2])
 
     frag1, atom_count = add_fragment_label(args, geometry, 1, atom_count = 0)
     
@@ -97,7 +135,7 @@ def create_inputs(args, grid, count = 1, outname = None):
 
         if not check_fragments_too_close(frag1, frag2, min_cutoff=args.min_dist):
             if not check_fragments_too_far(frag1, frag2, max_cutoff=args.max_dist):
-                displacement = f'dx={gri[0]}/dy={gri[1]}/dz={gri[2]}/'
+                displacement = f'dx={gri[0]}/dy={gri[1]}/dz={gri[2]}/rx={rot_xyz[0]}/rx={rot_xyz[1]}/rx={rot_xyz[2]}'
                 file_name = outname + '_' + str(count)
                 gps.write_gjf(args, frag1, frag2, displacement=displacement, file_name=file_name)
                 count += 1
@@ -122,12 +160,12 @@ def estimate_grid_from_glog(args):
         both_hemispheres (bool): If False, truncate at z = 0. If True, do both +/-z and get a 'shell' of complexation energies.
         dx/dy/dz: additional user requested displacement in X/Y/Z, respectively. Coded to be symmetric (could improve that easily)
     args of relevence:
-        args.inp    - the Gaussian log file which we will read geometry from and use to define our grid limits.
+        args.mol    - the Gaussian log file which we will read geometry from and use to define our grid limits.
     Returns:
         Tuple containing displacements suitable for the parse_dimension function called in bimolpes.py
     '''
-    print(f'Estimating displacements based on final geometry of {args.inp}')
-    geometry = generate_coords(gps.get_geometries(args.inp)[-1])
+    print(f'Estimating displacements based on final geometry of {args.mol}')
+    geometry = generate_coords(gps.get_geometries(args.mol)[-1])
     
     disp_xyz = split_to_xyz(args.est_disp) # get additional displacements in x ([0]), y([1]) and z([2]) from the args.est_disp argument. Parse with split_to_xyz.
     
@@ -280,7 +318,7 @@ def translate_coordinates(geometry, dx=0, dy=0, dz=0):
 
     return adjusted_geometry
 
-def rotate_coordinates(coordinates, x_angle=0, y_angle=0, z_angle=0):
+def rotate_coordinates(args, coordinates, x_angle=0, y_angle=0, z_angle=0):
     '''
     Rotate coordinates by applying a rotation matrix. Takes raw geometry from get_geometry
     Args:
@@ -292,7 +330,8 @@ def rotate_coordinates(coordinates, x_angle=0, y_angle=0, z_angle=0):
     Returns:
         adjusted_geometry - the input geometry rotated by user supplied angle(s).
     '''
-    print(f'Rotating fragment 2 by: x={x_angle}, y={y_angle}, z={z_angle} / °')
+    if not args.write_minima: # because it would be annoying to print this thousands of times.
+        print(f'Rotating fragment 2 by: x={x_angle}, y={y_angle}, z={z_angle} / °')
 
     rotation = R.from_euler('xyz', [x_angle, y_angle, z_angle], degrees=True) # rot matrix from SciPy Euler for brevity
     adjusted_geometry = []

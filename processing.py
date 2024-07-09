@@ -5,6 +5,7 @@ import numpy as np
 import zipfile
 import shutil
 import gauops as gps
+import geoops as geo
 
 def handle_read(args):
 
@@ -33,13 +34,18 @@ def handle_read(args):
                 print(f"An error occurred while saving the data: {e}")
                 return
             
-        dx_values, dy_values, dz_values, dyz_values, e_values, de_values = shape_data(data)
+        dx_values, dy_values, dz_values, rx_values, ry_values, rz_values, dyz_values, e_values, de_values = shape_data(data)
         
         minima_list = find_local_minima(data, num_minima = args.minima, e_threshold = args.ethr , d_threshold = args.dthr)
         
         minima_indices = find_indices_of_minima(data, minima_list)
         
         print_minima_report(minima_list, minima_indices)
+        
+        if args.write_minima:
+            # TO DO - this code is mostly implemented, but needs testing. It needs the directory namign to be better!!!
+            geo.write_minima_files(args, minima_list)
+
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
 
@@ -146,28 +152,29 @@ def process_files(path = None, method=0):
     data = []
     print(f"Reading data from {path}")
     for file in files:
-        coords = gps.extract_translation_coordinates(file)
+        coords, rotations = gps.extract_translation_and_rotation_coordinates(file)
         if method == 0:
             energy = gps.extract_final_energy(file)
         if method == 1:
             energy = gps.extract_complexation_energy(file)
 
-        if coords != None and energy != None:
-            for coord in coords:
-                data.append([coord[0], coord[1], coord[2], energy])
+        if coords is not None and energy is not None and rotations is not None:
+            for coord, rotation in zip(coords, rotations):
+                data.append([coord[0], coord[1], coord[2], rotation[0], rotation[1], rotation[2], energy])
     print(f'Processed {len(data)} configurations from {len(files)} files')
     
     return data
     
 def shape_data(data):
     '''
-    just shape the data returned by process_files() for plotting
+    Just shape the data returned by process_files() for plotting
     
     Args:
         data      - the data variable to use
     
     Returns:
         dx (y,z)  - x/y/z translation coordinates
+        rx (y,z)  - x/y/z rotation coordinates
         e_values  - raw energy
         de_values - delta energy
     '''
@@ -175,11 +182,14 @@ def shape_data(data):
     dx_values = np.array([row[0] for row in data])
     dy_values = np.array([row[1] for row in data])
     dz_values = np.array([row[2] for row in data])
+    rx_values = np.array([row[3] for row in data])
+    ry_values = np.array([row[4] for row in data])
+    rz_values = np.array([row[5] for row in data])
     dyz_values = np.sqrt((np.array([row[1] for row in data])**2) + (np.array([row[2] for row in data])**2))
-    e_values = np.array([row[3] for row in data])
+    e_values = np.array([row[6] for row in data])
     de_values = np.array(e_values - np.min(e_values))
     
-    return dx_values, dy_values, dz_values, dyz_values, e_values, de_values
+    return dx_values, dy_values, dz_values, rx_values, ry_values, rz_values, dyz_values, e_values, de_values
 
 def add_npz_extension(filename):
     base, ext = os.path.splitext(filename)
@@ -215,7 +225,7 @@ def find_local_minima(data, num_minima=10, e_threshold=10, d_threshold=2):
     
     """
     local_data = np.array(data)
-    sorted_indices = np.argsort(local_data[:, 3])
+    sorted_indices = np.argsort(local_data[:, 6]) # 
     sorted_data = local_data[sorted_indices]
 
     minima_list = [sorted_data[0]]
@@ -254,16 +264,15 @@ def find_indices_of_minima(data, minima):
             indices.append(match[0])
         else:
             indices.append(-1)
-    return indices    
+    return indices
     
 def print_minima_report(minima_list, minima_indices):
-    '''
-    Simply prints the minima_list and minima_indices passed as arguments to the terminal as aformatted table.
-    '''
-    print ("\n{:<12} {:<7} {:<7} {:<7} {:<7} {:<7} ".format('Type', 'X pos.', 'Y pos.', 'Z pos.', 'Energy', 'Index'))
-    for i, minima in enumerate(minima_list):
-        if i == 0:
-            print ("{:<12} {:<7} {:<7} {:<7} {:<7} {:<7}".format('Global Min.', minima[0],minima[1],minima[2],minima[3],minima_indices[i]))
-        if i != 0:
-            print ("{:<12} {:<7} {:<7} {:<7} {:<7} {:<7}".format('Local Min.', minima[0],minima[1],minima[2],minima[3],minima_indices[i]))
-            
+   '''
+   Simply prints the minima_list and minima_indices passed as arguments to the terminal as a formatted table.
+   '''
+   print ("\n{:<12} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7}".format('Type', 'X pos.', 'Y pos.', 'Z pos.', 'RX', 'RY', 'RZ', 'Energy', 'Index'))
+   for i, minima in enumerate(minima_list):
+       if i == 0:
+           print ("{:<12} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7}".format('Global Min.', minima[0], minima[1], minima[2], minima[3], minima[4], minima[5], minima[6], minima_indices[i]))
+       else:
+           print ("{:<12} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7}".format('Local Min.', minima[0], minima[1], minima[2], minima[3], minima[4], minima[5], minima[6], minima_indices[i]))

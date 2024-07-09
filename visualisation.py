@@ -19,7 +19,7 @@ def plot_data(args):
         print(f"Error: File {args.filename} not found.")
         return
         
-    dx_values, dy_values, dz_values, dyz_values, e_values, de_values = pro.shape_data(data) # shape data so its ready for plotting
+    dx_values, dy_values, dz_values, rx_values, ry_values, rz_values, dyz_values, e_values, de_values = pro.shape_data(data) # shape data so its ready for plotting
 
     #np.savetxt("dz_values.txt", data)
         
@@ -146,22 +146,48 @@ def plot_volume(args, dx_values, dy_values, dz_values, e_values, fig = None):
     
     if fig is None:
         fig = mlab.figure(bgcolor=(1, 1, 1), size=(800, 600))
+
+    # we need to reshape the data for a volumetric plot; get uniques, meshgrid call; make an array of energy (E) vals; build a source for the datamesh (src) with a scalar_field call.
+    x_unique = np.unique(dx_values)
+    y_unique = np.unique(dy_values)
+    z_unique = np.unique(dz_values)
     
-    if args.plt_max == 0:
-        args.plt_max = None
-        
-    if args.plt_min == 0:
-        args.plt_min = None
+    X, Y, Z = np.meshgrid(x_unique, y_unique, z_unique, indexing='ij')
 
-    points2D = np.vstack([dx_values, dy_values]).T
-    tri = Delaunay(points2D)
-    mesh = mlab.triangular_mesh(dx_values, dy_values, dz_values, tri.simplices, tube_radius = args.plt_line, scale_factor = args.plt_size, representation = args.plt_style, scalars=e_values, colormap=args.plt_cmap, opacity=args.plt_alpha, resolution = args.plt_res, vmax = args.plt_max, vmin = args.plt_min)
+    E = np.full((len(x_unique), len(y_unique), len(z_unique)), np.nan)
 
+    for i in range(len(dx_values)): # fill the empty initialized E-array in the loop
+        ix = np.where(x_unique == dx_values[i])[0][0]
+        iy = np.where(y_unique == dy_values[i])[0][0]
+        iz = np.where(z_unique == dz_values[i])[0][0]
+        E[ix, iy, iz] = e_values[i]
+
+    src = mlab.pipeline.scalar_field(X, Y, Z, E)
+    
     if args.plt_style == 'points':
-        mesh.actor.property.point_size = args.plt_size
-        if args.plt_size == 1: # print a note about how the default point size probably looks bad here.
-            print(f'When using plot_style points you may also want to specify a value of -plt_size (using default of 1 currently)')
+        datamesh = mlab.pipeline.glyph(src, mode=args.plt_glyph, colormap = args.plt_cmap, figure = fig, line_width = args.plt_line, opacity=args.plt_alpha, resolution = args.plt_res, scale_factor = 1.0, scale_mode = 'none', vmax = args.plt_max, vmin = args.plt_min)
+
+    elif args.plt_style in ['surface', 'wireframe']:
+        datamesh = mlab.pipeline.surface(src, colormap = args.plt_cmap, figure = fig, line_width = args.plt_line, opacity=args.plt_alpha, representation = args.plt_style, vmax = args.plt_max, vmin = args.plt_min)
+      
+    elif args.plt_style == 'isosurface':
+        datamesh = mlab.pipeline.iso_surface(src, contours=args.plt_contours, colormap=args.plt_cmap, opacity=args.plt_alpha, figure=fig,  vmax = args.plt_max, vmin = args.plt_min)
         
+    elif args.plt_style == 'volume':
+        # this is a very basic plotting style, not sure why you'd use it - there is minimal control over functions according to the manual...
+        datamesh = mlab.pipeline.volume(src, vmin=args.plt_min, vmax=args.plt_max)
+
+    elif args.plt_style == 'cut_plane':
+        # this is more fun than functional, but it looks interesting.
+        datamesh = mlab.pipeline.scalar_cut_plane(src, colormap=args.plt_cmap, figure = fig, line_width = args.plt_line, plane_orientation='x_axes',  vmax = args.plt_max, vmin = args.plt_min)
+        datamesh.enable_contours = True
+        datamesh.contour.number_of_contours = args.plt_contours
+
+    if not args.plt_show_nan:
+        # surely nobody will use this; unless plt_show_nan is requested, then we set the nan-value colouring to white/transparent. 
+        datamesh.module_manager.scalar_lut_manager.lut.nan_color = 0, 0, 0, 0
+    
+    
     cb = mlab.colorbar(title='$\Delta E_{complex}$ / kcal mol$^{-1}$', orientation='horizontal')
     cb.label_text_property.color = cb.title_text_property.color = (0, 0, 0)
     cb.title_text_property.vertical_justification = 'bottom'
