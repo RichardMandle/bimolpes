@@ -55,6 +55,12 @@ Various options allow control of the plotted PES. With `python bimolpes.py plot`
 `-plt_line` Set the line width used in `wireframe` or `fancymesh` plots; defaults to 2.0; set to 0 to hide lines; <br>
 `-plt_cmap` name of the matplotlib cmap to use. Defaults to plasma; consult https://matplotlib.org/stable/users/explain/colors/colormaps.html;<br>
 `-plt_res` controls the resolution of the resulting mlab plot object; <br>
+`-plt_flipz` flip the data about the z- axis; effectively puts the molecule "on top" of the PES, a visual trick only; <br>
+`-plt_minz` Only show the z-coordinate with the lowest energy, i.e. lowest energy for each combination of x/y; <br>
+`-plt_axes` draw the box axes as an object; <br>
+`-plt_minpoint` specify the midpoint of the colourmap; for negative values use quotation marks (e.g. "-0.05"); <br>
+`-plt_min` minimum value of energy to for colourmap; for negative values use quotation marks (e.g. "-15"); <br>
+`-plt_max` maximum value of energy to for colourmap; for negative values use quotation marks (e.g. "-1"); <br>
 <br> We can draw one (or two) molecules atom the PES landscape: the second molecule is displaced according to the read translation coordinates<br>
 `-mol` allows us to pass the .log file of a molecule to draw on the PES; <br>
 `-mol2` as before, but used for drawing a translated molecule in conjunction with... <br>
@@ -91,3 +97,9 @@ Reload the data and visualise with some custom options; showing molecule 'rm734'
 `python ..\..\bimolpes.py plot -filename ..\RM2929_par.npz -mol ..\..\CBFs\RM2931.log -plt_alpha 1 -plt_style cut_plane -plt_cmap magma`
 ![image](https://github.com/RichardMandle/bimolpes/assets/101199234/e0e2eb7d-920c-45a6-a85c-556433d9f8dc)
 
+<br><br> Generate data for the path "RM2930_anti_result", save to "RM2930_anti":
+`python ..\bimolpes.py read -path RM2930_anti_result -filename RM2930_anti`
+<br>
+Plot the data using a midpoint of zero, min/max of -10/2 (note tue quotes around -10!), bwr cmap, draw molecule on PES, show box axes, only show minimum z- value (-plt_minz)
+`python ..\bimolpes.py plot -filename RM2930_anti -plt_midpoint 0 -plt_max 2 -plt_min "-10" -plt_cmap bwr -mol ..\CBFs\RM2930.log  -plt_axes -plt_minz`
+![image](https://github.com/user-attachments/assets/62b1430c-bc03-457c-9ac7-30bcf2e569db)
