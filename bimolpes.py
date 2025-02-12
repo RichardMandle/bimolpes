@@ -8,7 +8,8 @@ import os
 # import our own modules
 import geoops as geo
 import processing as pro
-import visualisation as vis
+import visuals as vis
+import check_inputs as chk
     
 # import the BimolPESParser class for handling input arguments.
 from command_parser import BimolPESParser
@@ -30,12 +31,14 @@ def main():
     command_functions = {
         'write_grid': geo.write_grid,
         'handle_read': pro.handle_read,
+        'inspect': chk.inspect_gjf_files,
         'plot_data': vis.plot_data
     }
     
     parser = BimolPESParser(command_functions, config).get_parser()
     args = parser.parse_args()
-
+    print(f'Working with {"ORCA inp/out" if args.orca else "Gaussian gjf/log"} format as the -orca flag was {"passed" if args.orca else "not passed"}')
+    
     if hasattr(args, 'func'):
         args.func(args)
     else: # help them out if needed
@@ -43,9 +46,9 @@ def main():
                 
 if __name__ == "__main__":
     print(' ___ ___ __  __  ___  _    ___ ___ ___') 
-    print('| _ )_ _|  \/  |/ _ \| |  | _ \ __/ __|')
-    print('| _ \| || |\/| | (_) | |__|  _/ _|\__ \\')
-    print('|___/___|_|  |_|\___/|____|_| |___|___/')
-    print(f'\nVersion: 0.8; running on {platform.system()} {platform.version()}')
+    print('| _ )_ _|  \\/  |/ _ \\| |  | _ \\ __/ __|')
+    print('| _ \\| || |\\/| | (_) | |__|  _/ _|\\__ \\')
+    print('|___/___|_|  |_|\\___/|____|_| |___|___/')
+    print(f'\nVersion: 0.9; running on {platform.system()} {platform.version()}')
     print(f'Authors: Dr. R.J.Mandle; University of Leeds, 2024\n')
     main()

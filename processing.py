@@ -4,6 +4,7 @@ import os
 import numpy as np
 import zipfile
 import shutil
+import glob
 import gauops as gps
 import geoops as geo
 
@@ -27,7 +28,8 @@ def handle_read(args):
                 print(f"An error occurred during data processing: {e}")
                 return
         
-        if not args.nosave:
+        if not args.nosave and not args.reload:
+            # if we are reloading, we don't want to save the same data again
             try:
                 save_data_to_npz(args.filename, data)
             except Exception as e:
@@ -40,7 +42,7 @@ def handle_read(args):
         
         minima_indices = find_indices_of_minima(data, minima_list)
         
-        print_minima_report(minima_list, minima_indices)
+        print_minima_report(args,minima_list, minima_indices)
         
         if args.write_minima:
             # TO DO - this code is mostly implemented, but needs testing. It needs the directory namign to be better!!!
@@ -109,32 +111,39 @@ def mask_values(dx_values, dy_values, dz_values, e_values, e_max):
     dz_values = dz_values[mask]
     return dx_values, dy_values, dz_values, e_values
     
-def zip_files(dir_path, zip_file, ext=None):
+def zip_files(args, dir_path, zip_file):
     '''
-    Function for writing all files in a given directory to zip file.
-    Optionally matches extensions (used with .sh and .gjf to bundle things for HPC use).
+    simple function for writing all files in a given directory to a zip file.
+    matches extensions (used with .sh and .gjf/.inp to bundle things for HPC use).
+    
+    code looks a bit ragged but its mainly getting paths and extensions correct.
     
     Args:
+        args     - parsed arguments including orca flag
         dir_path - directory to zip contents of
-        zip_file - the zip file we'll write to
-        ext      - the extensions allowed for zipping; e.g. .gjf or .sh
+        zip_file - the zip file to write to
     '''
+
+    ext = (".inp", ".sh") if args.orca else (".gjf", ".sh")
+
     if not zip_file.endswith('.zip'):
-        if len(zip_file.split('.')) == 1:
-            zip_file = zip_file + '.zip'
-        if len(zip_file.split('.')) != 1:
-            zip_file = zip_file.split('.')[0] + '.zip'     
-            
-    counter = np.array([0,0]) # count up gjf files we zipped {counter[0]} and .sh files {counter[1]}
+        zip_file = zip_file.split('.')[0] + '.zip'
+
+    counter = np.array([0, 0])  # [count of .gjf/.inp files, count of .sh files]
+
     with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for file in os.listdir(dir_path):
             file_path = os.path.join(dir_path, file)
-            if os.path.isfile(file_path) and (ext is None or file.endswith(tuple(ext))):
+            if os.path.isfile(file_path) and file.endswith(ext):
                 zipf.write(file_path, arcname=os.path.basename(file_path))
-                counter += np.array([1 * file.endswith('.gjf'), 1 * file.endswith('.sh')]) # update the counter
-                
-    print(f'A total of {counter[0]} .gjf files and {counter[1]} .sh file(s) were added to into {zip_file}')
-    
+                counter += np.array([
+                    1 * file.endswith(".inp" if args.orca else ".gjf"),  # Count .gjf/.inp files
+                    1 * file.endswith('.sh')  # Count .sh files
+                ])
+
+    print(f"A total of {counter[0]} {'ORCA .inp' if args.orca else 'Gaussian .gjf'} files and {counter[1]} .sh file(s) were added to {zip_file}")
+
+
 def process_files(path = None, method=0):
     '''
     Wrapper function - uses the tools above to process output
@@ -266,13 +275,42 @@ def find_indices_of_minima(data, minima):
             indices.append(-1)
     return indices
     
-def print_minima_report(minima_list, minima_indices):
-   '''
-   Simply prints the minima_list and minima_indices passed as arguments to the terminal as a formatted table.
-   '''
-   print ("\n{:<12} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7}".format('Type', 'X pos.', 'Y pos.', 'Z pos.', 'RX', 'RY', 'RZ', 'Energy', 'Index'))
-   for i, minima in enumerate(minima_list):
-       if i == 0:
-           print ("{:<12} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7}".format('Global Min.', minima[0], minima[1], minima[2], minima[3], minima[4], minima[5], minima[6], minima_indices[i]))
-       else:
-           print ("{:<12} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7}".format('Local Min.', minima[0], minima[1], minima[2], minima[3], minima[4], minima[5], minima[6], minima_indices[i]))
+def print_minima_report(args, minima_list, minima_indices):
+    '''
+    Simply prints the minima_list and minima_indices passed as arguments to the terminal as a formatted table
+    and writes the same to a file.
+    '''
+    output_filename = f'{args.filename}_minima_report.txt'
+    
+    with open(output_filename, 'w') as f:
+        header = "\n{:<12} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7}".format(
+            'Type', 'X pos.', 'Y pos.', 'Z pos.', 'rot. X', 'rot. Y', 'rot. Z', 'E_complex', 'Index')
+        
+        f.write(header + '\n')
+        print(header)
+        
+        for i, minima in enumerate(minima_list):
+            if i == 0: # handle the global min slightly differently
+                line = "{:<12} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7}".format(
+                    'Global Min.', minima[0], minima[1], minima[2], minima[3], minima[4], minima[5], minima[6], minima_indices[i])
+            else:
+                line = "{:<12} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7} {:<7}".format(
+                    'Local Min.', minima[0], minima[1], minima[2], minima[3], minima[4], minima[5], minima[6], minima_indices[i])
+            
+            f.write(line + '\n')
+            print(line)
+    print(f'Wrote minima report to {output_filename}')
+    
+    
+def clean_path(filename):
+    """
+    Remove files matching 'filename*.inp', 'filename*.gjf' where * is an integer and 'filename.sh' in the current directory.
+    """
+    for log_file in glob.glob(filename.split('.')[0] + '*.inp'):
+        os.remove(log_file)
+        
+    for log_file in glob.glob(filename.split('.')[0] + '*.gjf'):
+        os.remove(log_file)
+
+    for sh_file in glob.glob(filename.split('.')[0] + '*.sh'):
+        os.remove(sh_file)    

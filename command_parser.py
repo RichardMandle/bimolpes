@@ -15,9 +15,10 @@ class BimolPESParser:
         self.command_functions = command_functions
         self.config = config
         self.parser = argparse.ArgumentParser(description="bimolpes - generate and process bimolecular potential energy surfaces")
-        self.subparsers = self.parser.add_subparsers(help='Specify either write, read, or plot modes.\n\n write - builds a grid of translated coordinates (e.g. calculation setup\n read  - reads DFT output and saves data to .npz for easy reloading/plotting\n plot  - plots data using mayavi', dest='command', required=True)
+        self.subparsers = self.parser.add_subparsers(help='Specify either write, read, inspect or plot modes.\n\n write - builds a grid of translated coordinates (e.g. calculation setup)\n read  - reads DFT output and saves data to .npz for easy reloading/plotting\n inspect - reads the translation vectors from a set of .gjf files and saves a .npz file which can be visualised with plot mode - used to check for complete sampling of the PES\n plot  - plots data using mayavi', dest='command', required=True)
         self.setup_write_parser()
         self.setup_read_parser()
+        self.setup_inspect_parser()
         self.setup_plot_parser()
 
     def setup_write_parser(self):
@@ -60,6 +61,15 @@ class BimolPESParser:
         add_gaussian_options(read_parser, self.config)
     
         read_parser.set_defaults(func=self.command_functions['handle_read'])
+    
+    def setup_inspect_parser(self):
+        inspect_parser = self.subparsers.add_parser('inspect', help='Read the translation vectors of a set of Gaussian input (.gjf) files. Used to check for complete sampling of the PES. Produces a .npz file to be read by "plot" mode.')
+        inspect_parser.add_argument('-path', type=str, default=os.getcwd(), help='Path to directory containing .gjf files')
+        inspect_parser.add_argument('-out', type=str, default='inspection.npz', help='Output .npz filename')
+
+        add_gaussian_options(inspect_parser, self.config)
+        
+        inspect_parser.set_defaults(func=self.command_functions['inspect'])
         
     def setup_plot_parser(self):
         # Sub-parser for the plot command; first up, options for the 3d plot.
@@ -79,7 +89,10 @@ class BimolPESParser:
         plot_parser.add_argument('-plt_flipz', action='store_true', default=self.config.getboolean('PLOT','FlipZ', fallback = False), help='Flip data about the Z-axis; effectively places the molecule "on top" of the surface data, just a visual effect for publications.')
         plot_parser.add_argument('-plt_max', type=float, default=convert_to_none_or_float(self.config.get('PLOT', 'VMax', fallback='None')), help='VMax of points/surface to use in plotting (float; fallback = None)')
         plot_parser.add_argument('-plt_min', type=float, default=convert_to_none_or_float(self.config.get('PLOT', 'VMin', fallback='None')), help='VMin of points/surface to use in plotting (float; fallback = None)')
-        
+        plot_parser.add_argument('-plt_minz', action='store_true', default=self.config.getboolean('PLOT','MinZ', fallback = False), help='Only show the minimum energy point for a given x/y coordinate, in other words, only one value in Z.')
+        plot_parser.add_argument('-plt_axes', action='store_true', default=self.config.getboolean('PLOT','Axes', fallback = False), help='Plot the box axes with labels')
+        plot_parser.add_argument('-plt_midpoint', type=float, default=self.config.get('PLOT', 'Midpoint', fallback=-99), help='Set the midpoint of the colourmap; defaults to -99, which turns it off')
+   
         # specifics for odd-types of plots
         plot_parser.add_argument('-plt_contours', type=int, default=self.config.getint('PLOT', 'PltContours', fallback=4), help='Number of contours to use in isosurface or 3D Contour plot (can change w/ GUI too)')
                 
@@ -116,8 +129,9 @@ def add_gaussian_options(parser, config):
     # define gaussian g09/g16 options seperately so we can call in either write or read (-write_minima) modes.
     parser.add_argument('-mem', type=int, default=config.getint('GAUSSIAN', 'RAM', fallback=8), help='RAM for gaussian job, in GB (int; fallback = 8)')
     parser.add_argument('-cpu', type=int, default=config.getint('GAUSSIAN', 'CPU', fallback=8), help='CPU cores for gaussian job (int; fallback = 8)')
-    parser.add_argument('-groute', type=str, default=config.get('GAUSSIAN', 'GRoute'), help='Specify the full Gaussian route section; default: #T B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ Counterpoise=2')
+    parser.add_argument('-route', type=str, default=config.get('GAUSSIAN', 'Route'), help='Specify the full Gaussian route section; default: #T B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ Counterpoise=2')
     parser.add_argument('-gver', type=str, default=config.get('GAUSSIAN', 'Version', fallback='G16'), help='Specify Gaussian version used for calculations (str; fallback = G16)')
+    parser.add_argument("-orca", action="store_true", help="Enable ORCA mode. If omitted, Gaussian mode is used.")
     parser.add_argument('-disk', type=str, default=config.get('GAUSSIAN', 'MaxDisk', fallback='5'), help='Specify Max Disk option for Gaussian calculations in GB (str; fallback = 5)')
     parser.add_argument('-mol', type=str, default=None, help='Gaussian .log file for the molecule to draw on the PES')
     parser.add_argument('-mol2', type=str, default=None, help='Gaussian .log file for the second molecule to draw on the PES')    

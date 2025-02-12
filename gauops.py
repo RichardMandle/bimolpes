@@ -3,7 +3,6 @@
 import numpy as np
 import re
 import os
-import glob
 
 import geoops as geo
 
@@ -97,7 +96,7 @@ def write_gjf(args,
             chk_filename = os.path.basename(file_name)  # get the base name of the file
             f.write(f'%chk={chk_filename}.chk\n')
             
-        f.write(f'{args.groute} maxdisk={args.disk}GB\n\n') 
+        f.write(f'{args.route} maxdisk={args.disk}GB\n\n') 
         f.write(displacement + '\n\n')
         f.write('0 1\n') # Here we provide spin/charge info; might want to allow flexibility here
 
@@ -195,6 +194,8 @@ def extract_translation_and_rotation_coordinates(file_path):
     '''
     Read the translation and rotation coordinates from the Gaussian log file header.
     
+    More flexibile; G16 writes additional dashes to .log files, so the regex call has been updated (V 0.8)
+    
     ARGS:
         file_path - its the file you are reading!
     RETURNS:
@@ -203,14 +204,17 @@ def extract_translation_and_rotation_coordinates(file_path):
     '''
     coordinates = []
     rotations = []
+    pattern = re.compile(r'dx=(-?\d+\.?\d*)/dy=(-?\d+\.?\d*)/dz=(-?\d+\.?\d*)/rx=(-?\d+\.?\d*)/ry=(-?\d+\.?\d*)/rz=(-?\d+\.?\d*)')
+    
     with open(file_path, 'r') as file:
         for line in file:
-            if line.strip().startswith('dx='):
-                match = re.search(r'dx=(-?\d+\.?\d*)/dy=(-?\d+\.?\d*)/dz=(-?\d+\.?\d*)/rx=(-?\d+\.?\d*)/ry=(-?\d+\.?\d*)/rz=(-?\d+\.?\d*)', line.strip()) # Use regex to find the dx, dy, dz, rx, ry, rz values
+            if 'dx=' in line and 'dy=' in line and 'dz=' in line and 'rx=' in line and 'ry=' in line and 'rz=' in line:
+                match = pattern.search(line.strip())
                 if match:
                     dx, dy, dz, rx, ry, rz = map(float, match.groups())
                     coordinates.append((dx, dy, dz))
                     rotations.append((rx, ry, rz))
+                    
     return coordinates, rotations
 
 def find_log_files(directory):
@@ -220,13 +224,3 @@ def find_log_files(directory):
         if file.endswith(".log"):
             log_files.append(os.path.join(directory, file))
     return log_files
-    
-def clean_path(filename):
-    """
-    Remove files matching 'filename*.gjf' where * is an integer and 'filename.sh' in the current directory.
-    """
-    for log_file in glob.glob(filename.split('.')[0] + '*.gjf'):
-        os.remove(log_file)
-
-    for sh_file in glob.glob(filename.split('.')[0] + '*.sh'):
-        os.remove(sh_file)    

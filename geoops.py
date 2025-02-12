@@ -6,13 +6,14 @@ from scipy.spatial.transform import Rotation as R
 from rdkit import Chem
 
 import gauops as gps
+import orcops as ops
 import processing as pro
 
 def split_to_xyz(values_to_split):
     '''
     Little function that splits a list/array of 1-2-3 values into something we can parse later on (either res. or disp. data?)
     '''
-    split_values = [values_to_split[0], values_to_split[0], values_to_split[0]]  # if 1 passed, x=y=z
+    split_values = [np.abs(values_to_split[0]), np.abs(values_to_split[0]), np.abs(values_to_split[0])]  # if 1 passed, x=y=z; take the absolute incase the user passes a negative value
     if len(values_to_split) > 1:
         split_values[1] = split_values[2] = values_to_split[1]                   # if 2 passed, x!=y=z
     if len(values_to_split) > 1:
@@ -34,7 +35,7 @@ def write_minima_files(args, minima_list):
     #get an output path to write to
     file_name = f'{args.filename}_min' # append _min sow we know we are dealing with some generated minima
     os.makedirs(file_name, exist_ok=True)
-    gps.clean_path(file_name) # clean that directory
+    pro.clean_path(file_name) # clean that directory
     
     for i, minima in enumerate(minima_list):
         count = i + 1
@@ -48,22 +49,31 @@ def write_minima_files(args, minima_list):
         # Look at rotation in the displacement line of our .log file; replicate it here
         if (np.abs(minima[3]) + np.abs(minima[4]) + np.abs(minima[5])) != 0:
             frag2 = rotate_coordinates(args, frag2,  x_angle=minima[3], y_angle=minima[4], z_angle=minima[5])
+
+        if args.orca:
+            # if we're using ORCA, call the ORCA specific routines
+            ops.write_inp(args, frag1, frag2, this_file_name)                                                                # TO DO - function not written.
+            ops.make_sge_job(args, outname = os.path.join(file_name, os.path.basename(file_name)), startjob=1, endjob=count) # make the SGE job for ORCA (needs testing)
+            print(f'Wrote {count} minima to new ORCA .inp files in {file_name}')    
             
         # add fragment labels 
-        frag1, atom_count = add_fragment_label(args, frag1, 1, atom_count = 0)
-        frag2, atom_count = add_fragment_label(args, translate_coordinates(frag2, dx=minima[0], dy=minima[1], dz=minima[2]), 2, atom_count = atom_count)
-        
-        gps.write_gjf(args, frag1, frag2, displacement, this_file_name)
-        
-    gps.make_sge_job(args, outname = os.path.join(file_name, os.path.basename(file_name)), startjob=1, endjob=count) # make the SGE job
-    print(f'Wrote {count} minima to new .gjf files in {file_name}')
+        if not args.orca:
+            # if we aren't using ORCA, do it this way:
+            frag1, atom_count = add_fragment_label(args, frag1, 1, atom_count = 0)
+            frag2, atom_count = add_fragment_label(args, translate_coordinates(frag2, dx=minima[0], dy=minima[1], dz=minima[2]), 2, atom_count = atom_count)
+            
+            gps.write_gjf(args, frag1, frag2, displacement, this_file_name)
+            gps.make_sge_job(args, outname = os.path.join(file_name, os.path.basename(file_name)), startjob=1, endjob=count) # make the SGE job
+            print(f'Wrote {count} minima to new Gaussian .gjf files in {file_name}')
+            
+
     
 def write_grid(args):
     '''
     Master function for grid writing.
     
     Generates a grid of displacements, handling calls to create_inputs
-    and writing to .gjf, .sh and .zip files as needed.
+    and writing to .gjf (or .inp), .sh and .zip files as needed.
     '''
     outpath = pro.get_output_filename(args.out, args.mol, args.mol2)
     outpath = os.path.abspath(outpath)
@@ -86,69 +96,77 @@ def write_grid(args):
     if args.frz:
         print(f'Freezing Atoms: {args.frz}')
         
-    gps.make_sge_job(args, outname = file_plus_path, startjob=1, endjob=count) # make the SGE job
+    if args.orca:    
+        ops.make_sge_job(args, outname = file_plus_path, startjob=1, endjob=count) # make the SGE job
+           
+    if not args.orca:    
+        gps.make_sge_job(args, outname = file_plus_path, startjob=1, endjob=count) # make the SGE job
 
     if args.zip: # bundle into .zip for unleashing on HPC (quicker to upload one file than 100k small ones)
-        pro.zip_files(dir_path = outpath, zip_file = outpath, ext =('gjf','sh'))
+        pro.zip_files(args, dir_path = outpath, zip_file = outpath)
 
 # TO DO - would be good to simplify this function and just read the arguments directly.
-def create_inputs(args, grid, count = 1, outname = None):                
-    '''                                                                                                                   
-    Function to create a grid of points which we use as translation vectors for our second molecule                       
-    For each point on the grid we offset molecule 2 by this much, allowing us to scan across all 3 dimensions             
-                                                                                                                          
-    Args:                                                                                                                 
-        grid      - grid generated by gen_grid()
-        groute    - Gaussian route section for bimolecular PES calculations. 
-        count     - a counter used for writing the right number of SGE files (default = 1)
-    
-    args.Args of note:
-        inp      - our "molecule 1" file, previously called "filename"
-        inp2     - our "molecule 2" file, previously called "filename2"
-        
-    Returns:
-        gjf files - Gaussian input files, one for each accepted set of translations
-        sh file   - SGE file for executing on ARC3/4
-        
-    '''
+import numpy as np
 
+def create_inputs(args, grid, count=1, outname=None):
+    ''' 
+    Generates translated molecular geometries and filters based on distance constraints.
+    Optimized using NumPy vectorization, but keeps molecule data in text form.
+    '''
+    
     if outname is None:
         outname = os.path.splitext(os.path.basename(args.mol))[0] + '_grid'
-       
-    gps.clean_path(outname) # tidy directory
     
-    too_close = too_far = 0 # these are just counters that we'll use to feedback (print) why some things were rejected
+    pro.clean_path(outname)  # Clean directory before writing
     
-    geometry = frag2_geometry = generate_coords(gps.get_geometries(args.mol)[-1]) # have both geometries the same for now, update below
-    
-    if (args.mol2 != None) | ((args.mol2 != args.mol) & (args.mol2 != None)):
+    too_close = too_far = 0  # Counters for rejected structures
+
+    # Load geometries only once
+    geometry = generate_coords(gps.get_geometries(args.mol)[-1])
+    frag2_geometry = geometry  # Assume identical unless mol2 is provided
+
+    if args.mol2 and args.mol2 != args.mol:
         frag2_geometry = generate_coords(gps.get_geometries(args.mol2)[-1])
 
-    rot_xyz = split_to_xyz(args.rot) # take rotation from arguments and split, however its delimited, and rotate as/if needed.
-    if (np.abs(rot_xyz[0]) + np.abs(rot_xyz[1]) + np.abs(rot_xyz[2])) != 0:
-        frag2_geometry = rotate_coordinates(args, frag2_geometry,  x_angle=rot_xyz[0], y_angle=rot_xyz[1], z_angle=rot_xyz[2])
+    # Apply rotation once, outside the loop
+    rot_xyz = split_to_xyz(args.rot)
+    if np.any(rot_xyz):  # If any rotation is nonzero
+        frag2_geometry = rotate_coordinates(args, frag2_geometry, *rot_xyz)
 
-    frag1, atom_count = add_fragment_label(args, geometry, 1, atom_count = 0)
+    frag1, atom_count = add_fragment_label(args, geometry, 1, atom_count=0)
     
-    for gri in grid:
-        frag2, atom_count = add_fragment_label(args, translate_coordinates(frag2_geometry, dx=gri[0], dy=gri[1], dz=gri[2]), 2, atom_count = atom_count)
+    # **Precompute translations** (avoid calling `translate_coordinates` inside the loop)
+    translated_geometries = {
+        tuple(gri): translate_coordinates(frag2_geometry, dx=gri[0], dy=gri[1], dz=gri[2])
+        for gri in grid
+    }
 
+    for gri, frag2 in translated_geometries.items():
+        # **Vectorized distance checks (works directly with text-based fragments)**
         if not check_fragments_too_close(frag1, frag2, min_cutoff=args.min_dist):
             if not check_fragments_too_far(frag1, frag2, max_cutoff=args.max_dist):
-                displacement = f'dx={gri[0]}/dy={gri[1]}/dz={gri[2]}/rx={rot_xyz[0]}/rx={rot_xyz[1]}/rx={rot_xyz[2]}'
-                file_name = outname + '_' + str(count)
-                gps.write_gjf(args, frag1, frag2, displacement=displacement, file_name=file_name)
+                
+                displacement = f'dx={gri[0]}/dy={gri[1]}/dz={gri[2]}/rx={rot_xyz[0]}/ry={rot_xyz[1]}/rz={rot_xyz[2]}'
+                file_name = f"{outname}_{count}"
+
+                if args.orca:
+                    ops.write_inp(args, geometry, frag2, displacement=displacement, file_name=file_name)
+                else:
+                    frag2, atom_count = add_fragment_label(args, frag2, 2, atom_count = atom_count) # add fragment #2 labels
+                    gps.write_gjf(args, frag1, frag2, displacement=displacement, file_name=file_name)
+                
                 count += 1
             else:
                 too_far += 1
         else:
             too_close += 1
-            
+
     print(f'{too_close} geometries rejected for atom-atom close contacts <= {args.min_dist} Angstrom')
     print(f'{too_far} geometries rejected for minimum atom-atom distance > {args.max_dist} Angstrom')
-    print(f'A total of {count-1} geometries were written to .gjf')
-    
+    print(f"A total of {count-1} geometries were written to {'ORCA .inp format' if args.orca else 'Gaussian .gjf format'}")
+
     return outname, count
+
 
 def estimate_grid_from_glog(args):
     '''
@@ -272,6 +290,9 @@ def add_fragment_label(args, geometry, fragment_number=1, atom_count = 0):
         atom_count: We'll use this to keep track of atom numbers between fragments 1 and 2 (because #1 of 2 is numbered as the last one in 1 + 1...)
     Returns:
         Updated geometry with "(Fragment=1)" labels as a list of strings.
+        
+    to do:
+        need to make sure this is skipped when doing ORCA type files.
     """
     updated_geometry = []
 
@@ -330,8 +351,6 @@ def rotate_coordinates(args, coordinates, x_angle=0, y_angle=0, z_angle=0):
     Returns:
         adjusted_geometry - the input geometry rotated by user supplied angle(s).
     '''
-    if not args.write_minima: # because it would be annoying to print this thousands of times.
-        print(f'Rotating fragment 2 by: x={x_angle}, y={y_angle}, z={z_angle} / °')
 
     rotation = R.from_euler('xyz', [x_angle, y_angle, z_angle], degrees=True) # rot matrix from SciPy Euler for brevity
     adjusted_geometry = []
@@ -347,48 +366,54 @@ def rotate_coordinates(args, coordinates, x_angle=0, y_angle=0, z_angle=0):
 
     return adjusted_geometry
 
-def distance(point1, point2):
+
+#def distance(point1, point2):
+#    """
+#    Calculate the distance between two points in xyz.
+#
+#   This is now not used - the vectorised code should be much faster.
+#    """
+#    return ((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2 + (point1[2] - point2[2]) ** 2) ** 0.5
+def extract_coords(fragment):
     """
-    Calculate the distance between two points in xyz.
+    Extracts only the X, Y, Z coordinates from a molecular fragment.
+    Works directly with text-based fragments (no NumPy conversions).
     """
-    return ((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2 + (point1[2] - point2[2]) ** 2) ** 0.5
+    coords = []
+    for atom in fragment:
+        parts = atom.strip().split()
+        if len(parts) >= 4:
+            try:
+                x, y, z = float(parts[-3]), float(parts[-2]), float(parts[-1])
+                coords.append([x, y, z])
+            except ValueError:
+                raise ValueError(f"Could not extract XYZ coordinates from: {atom}")
+    return np.array(coords)
 
 def check_fragments_too_close(frag1, frag2, min_cutoff=2):
     """
-    Check if any atoms in two fragments are too close based on the cutoff distance.
-
-    Args:
-        frag1 (list): The list of atoms and their coordinates for the first fragment.
-        frag2 (list): The list of atoms and their coordinates for the second fragment.
-        cutoff (float): The cutoff distance to consider atoms too close.
-
-    Returns:
-        bool: True if any atoms are too close, False otherwise.
+    Vectorized check if any atoms in two fragments are too close.
+    Uses text-based input without unnecessary pre-conversion.
     """
-    for atom1 in frag1:
-        for atom2 in frag2:
-            coords1 = tuple(map(float, atom1.split()[2:5]))
-            coords2 = tuple(map(float, atom2.split()[2:5]))
-            if distance(coords1, coords2) < min_cutoff:
-                return True
-    return False
+    coords1 = extract_coords(frag1)
+    coords2 = extract_coords(frag2)
+
+    if coords1.shape[1] != 3 or coords2.shape[1] != 3:
+        raise ValueError(f"Incorrect coordinate format: frag1 {coords1.shape}, frag2 {coords2.shape}")
+
+    distances = np.linalg.norm(coords1[:, np.newaxis, :] - coords2[np.newaxis, :, :], axis=2)
+    return np.any(distances < min_cutoff)
 
 def check_fragments_too_far(frag1, frag2, max_cutoff=5):
     """
-    Check if any atoms in two fragments are too close based on the cutoff distance.
-
-    Args:
-        frag1 (list): The list of atoms and their coordinates for the first fragment.
-        frag2 (list): The list of atoms and their coordinates for the second fragment.
-        cutoff (float): The cutoff distance to consider atoms too close.
-
-    Returns:
-        bool: True if any atoms are too close, False otherwise.
+    Vectorized check if all atoms in two fragments are too far apart.
+    Uses text-based input without unnecessary pre-conversion.
     """
-    for atom1 in frag1:
-        for atom2 in frag2:
-            coords1 = tuple(map(float, atom1.split()[1:4]))
-            coords2 = tuple(map(float, atom2.split()[1:4]))
-            if distance(coords1, coords2) <= max_cutoff:
-                return False 
-    return True  
+    coords1 = extract_coords(frag1)
+    coords2 = extract_coords(frag2)
+
+    if coords1.shape[1] != 3 or coords2.shape[1] != 3:
+        raise ValueError(f"Incorrect coordinate format: frag1 {coords1.shape}, frag2 {coords2.shape}")
+
+    distances = np.linalg.norm(coords1[:, np.newaxis, :] - coords2[np.newaxis, :, :], axis=2)
+    return not np.any(distances <= max_cutoff)
