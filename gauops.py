@@ -6,7 +6,7 @@ import os
 
 import geoops as geo
 
-def get_geometries(file_path):
+def get_gau_geometries(file_path):
     '''
     basic function that extracts any and all geometries present in a Gaussian output file.
     
@@ -90,13 +90,14 @@ def write_gjf(args,
 
     with open(file_name + '.gjf', 'w') as f:
         f.write(f'%nprocshared={args.cpu}\n')
-        f.write(f'%mem={args.mem}GB\n')
+        f.write(f'%mem={int(args.mem * 0.9)}GB\n')
         
         if args.chk:  # write our .chk checkpoint if requested
             chk_filename = os.path.basename(file_name)  # get the base name of the file
             f.write(f'%chk={chk_filename}.chk\n')
+            f.write('%NoSave\n')
             
-        f.write(f'{args.route} maxdisk={args.disk}GB\n\n') 
+        f.write(f'{args.groute} maxdisk={args.disk}GB\n\n') 
         f.write(displacement + '\n\n')
         f.write('0 1\n') # Here we provide spin/charge info; might want to allow flexibility here
 
@@ -111,6 +112,10 @@ def write_gjf(args,
     
 def make_sge_job(args, outname, startjob=0, endjob=0):
     """
+    TO DO - this is out of date since we migrated to slurm
+    TO DO - write a SLURM job generator
+    22/02/2026 - RJM
+    
     Generate a job script for running a Gaussain job on ARC (the UoL compute clusters).
     
     Args:
@@ -135,7 +140,7 @@ def make_sge_job(args, outname, startjob=0, endjob=0):
         f.write('#$ -cwd \n')
         f.write('#$ -V\n')
         f.write('#$ -l h_rt=48:00:00\n')
-        f.write(f'#$ -l h_vmem={args.mem}G\n')
+        f.write(f'#$ -l h_vmem={args.mem / args.cpu}G\n')
         f.write(f'#$ -pe smp {args.cpu}\n')
         f.write(f'#$ -l disk={args.disk}G\n')
         
@@ -151,8 +156,9 @@ def make_sge_job(args, outname, startjob=0, endjob=0):
         
         if args.chk: # if requested checkpoint we likely want the formatted checkpoint too; so do this:
             chk_filename = os.path.basename(file_name)
-            f.write(f'formchk {chk_filename}{"_$SGE_TASK_ID" if multiple else ""}.chk {chk_filename}{"_$SGE_TASK_ID" if multiple else ""}.fchk')
-
+            f.write(f'formchk {chk_filename}{"_$SGE_TASK_ID" if multiple else ""}.chk {chk_filename}{"_$SGE_TASK_ID" if multiple else ""}.fchk\n')
+        f.write('rm ${GAUSS_SCRDIR}/*') # clean up anything in the scratch directory
+        
     return    
     
 def extract_complexation_energy(log_file_path):
@@ -171,6 +177,14 @@ def extract_complexation_energy(log_file_path):
                         complexation_energy = float(energy_str.strip())
                     except (IndexError, ValueError):
                         print("Error parsing complexation energy from line:", line)
+            
+            if " Counterpoise corrected energy" in line:
+                parts = line.split('=')
+                try:
+                    energy_str = parts[1].split()[0]  # Get the first part after '=', which should be the energy value
+                    complexation_energy = float(energy_str.strip()) * 627.503
+                except (IndexError, ValueError):
+                    print("Error parsing complexation energy from line:", line)
     return complexation_energy
 
 def extract_final_energy(log_file_path):

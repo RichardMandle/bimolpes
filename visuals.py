@@ -1,7 +1,17 @@
 # plotting functions
 
 import numpy as np
-from mayavi import mlab  
+# If mayavi has issues, don't prevent us from writing / reading jobs
+# TO DO - might be worth looking at writing a .cube file or similar so we can
+# just latch onto other visualisation tools./
+
+try:
+    from mayavi import mlab  
+    mayavi_available = True
+except Exception as e:
+    mayavi_available = False
+    print("[BimolPES]: Mayavi isn`'t available, so visuals are disabled")
+    print(f"reason is: {e}")
 from rdkit import Chem
 
 import matplotlib.pyplot as plt
@@ -12,6 +22,9 @@ import geoops as geo
 import processing as pro
 
 def plot_data(args):
+    if not MAYAVI_AVAILABLE:
+        print("[BimolPES] Skipping 3D surface plot (Mayavi unavailable).")
+    return
     '''
     Master function for plotting data / molecules
     '''

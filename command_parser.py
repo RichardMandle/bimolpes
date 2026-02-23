@@ -38,7 +38,7 @@ class BimolPESParser:
 
         add_gaussian_options(write_parser, self.config)
 
-        write_parser.add_argument('-out', type=str, default=None, help='Naming schema for output .gjf files (optional; defaults to mol1_mol2\mol1_mol2 <<TODO extending iteratively?>>)')   
+        write_parser.add_argument('-out', type=str, default=None, help='Naming schema for output .gjf files (optional; defaults to mol1_mol2\\mol1_mol2 <<TODO extending iteratively?>>)')   
         write_parser.add_argument('-zip', action='store_const', const=False, default=True, help='Don\'t zip output!')
         
         write_parser.set_defaults(func=self.command_functions['write_grid'])
@@ -56,6 +56,7 @@ class BimolPESParser:
         read_parser.add_argument('-ethr', type=float, default=self.config.getfloat('READ','EThr', fallback = 8.0), help='Energy cutoff for identifying discrete minima (float; fallback = 8.0)')
         read_parser.add_argument('-dthr', type=float, default=self.config.getfloat('READ','DThr', fallback = 1.0), help='Distance cutoff for identifying discrete minima (float; fallback = 1.0)')           
         
+        read_parser.add_argument('-deduplicate', action='store_const', const=True, default=True, help='Ignore duplicate geometries in minima report (e.g. displacement in Y of + 5 and -5)')
         read_parser.add_argument('-write_minima', action='store_const', const=True, default=False, help='Write Gaussian input files for identified minima')
         
         add_gaussian_options(read_parser, self.config)
@@ -129,15 +130,16 @@ def add_gaussian_options(parser, config):
     # define gaussian g09/g16 options seperately so we can call in either write or read (-write_minima) modes.
     parser.add_argument('-mem', type=int, default=config.getint('GAUSSIAN', 'RAM', fallback=8), help='RAM for gaussian job, in GB (int; fallback = 8)')
     parser.add_argument('-cpu', type=int, default=config.getint('GAUSSIAN', 'CPU', fallback=8), help='CPU cores for gaussian job (int; fallback = 8)')
-    parser.add_argument('-route', type=str, default=config.get('GAUSSIAN', 'Route'), help='Specify the full Gaussian route section; default: #T B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ Counterpoise=2')
+    parser.add_argument('-groute', type=str, default=config.get('GAUSSIAN', 'Route'), help='Specify the full Gaussian route section; default: #T B3LYP cc-pVTZ EmpiricalDispersion=GD3BJ Counterpoise=2')
+    parser.add_argument('-oroute', type=str, default=config.get('ORCA', 'Route'), help='Specify the full ORCA route section; default: !dlpno-ccsd(t) DEF2-TZVP/C DEF2/J RIJCOSX LED')
     parser.add_argument('-gver', type=str, default=config.get('GAUSSIAN', 'Version', fallback='G16'), help='Specify Gaussian version used for calculations (str; fallback = G16)')
     parser.add_argument("-orca", action="store_true", help="Enable ORCA mode. If omitted, Gaussian mode is used.")
     parser.add_argument('-disk', type=str, default=config.get('GAUSSIAN', 'MaxDisk', fallback='5'), help='Specify Max Disk option for Gaussian calculations in GB (str; fallback = 5)')
     parser.add_argument('-mol', type=str, default=None, help='Gaussian .log file for the molecule to draw on the PES')
     parser.add_argument('-mol2', type=str, default=None, help='Gaussian .log file for the second molecule to draw on the PES')    
     parser.add_argument('-chk', action='store_const', const=True, default=False, help='if true, write the Gaussian checkpoint file and convert to fchk after job is done (via SGE)') 
-    parser.add_argument('-frz', type=parse_atom_numbers, default='', help='Int; Specify atom numbers to freeze during the calculation. This is useful if also optimising; pass a set of 3 or more non-colinear points to freeze a molecule but allow (some) internal bond rotations etc. Can be done on molecule #1 and #2; be mindful that the atom numbers need to be set by checking the number of atoms in the input .log file(s). Allows partial optimisation (a semi-relaxed scan?) i.e. molecules frozen in place centre-to-centre but most atoms/bonds allowed to relax.')
-               
+    parser.add_argument('-frz', type=parse_atom_numbers, default='', help='Int; Specify atom numbers to freeze during the calculation. This is useful if also optimising; pass a set of 3 or more non-colinear points to freeze a molecule but allow (some) internal bond rotations etc. Can be done on molecule #1 and #2; be mindful that the atom numbers need to be set by checking the number of atoms in the input .log file(s). Allows partial optimisation (a semi-relaxed scan?) i.e. molecules frozen in place centre-to-centre but most atoms/bonds allowed to relax.')    
+    
 def parse_atom_numbers(num_value):
     '''
     Parsing function that takes a string of numbers separated by various delimiters

@@ -4,10 +4,44 @@ import numpy as np
 import os 
 from scipy.spatial.transform import Rotation as R
 from rdkit import Chem
+import glob
 
+# grab our own modules
 import gauops as gps
 import orcops as ops
 import processing as pro
+
+def get_geometries(path):
+    """
+    NEW - a general geometry loader.
+
+    based on the extension, calls the right file handling function
+
+    Returns:
+        List of geometries (each geometry is a list of coordinate lines)
+    """
+
+    if path is None:
+        raise ValueError("No geometry file specified.")
+
+    # need to handle glob patterns explicitly
+    if any(ch in path for ch in ["*", "?", "["]):
+        # assume XYZ glob for now
+        # probably fair enough
+        return ops.get_xyz_geometries(path)
+
+    ext = os.path.splitext(path)[1].lower()
+
+    if ext in [".log", ".out"]:
+        return gps.get_gau_geometries(path)
+
+    elif ext == ".xyz":
+        return ops.get_xyz_geometries(path)
+
+    # aim here is we could support all sorts of files quite easily.
+
+    else:
+        raise ValueError(f"Unsupported geometry format: {ext}")
 
 def split_to_xyz(values_to_split):
     '''
@@ -43,8 +77,8 @@ def write_minima_files(args, minima_list):
         this_file_name = os.path.join(file_name, os.path.basename(f'{file_name}_{count}'))
 
         # get geometries from user supplied file(s)
-        frag1 = generate_coords(gps.get_geometries(args.mol)[-1])
-        frag2 = generate_coords(gps.get_geometries(args.mol2)) if args.mol2 else frag1
+        frag1 = get_geometries(args.mol)[-1]
+        frag2 = get_geometries(args.mol2)[-1] if args.mol2 else frag1
         
         # Look at rotation in the displacement line of our .log file; replicate it here
         if (np.abs(minima[3]) + np.abs(minima[4]) + np.abs(minima[5])) != 0:
@@ -88,7 +122,7 @@ def write_grid(args):
     file_plus_path = os.path.join(outpath, os.path.basename(outpath))
 
     if args.est:
-        args.x, args.y, args.z = estimate_grid_from_glog(args)          # here, estimate the x/y/z ranges from the input file (args.mol) using estimate_grid_from_glog.
+        args.x, args.y, args.z = estimate_grid_from_mol(args)          # here, estimate the x/y/z ranges from the input file (args.mol) using estimate_grid_from_mol.
         
     grid = gen_grid(args)     # get a grid using the user supplied spacings.
     
@@ -122,11 +156,11 @@ def create_inputs(args, grid, count=1, outname=None):
     too_close = too_far = 0  # Counters for rejected structures
 
     # Load geometries only once
-    geometry = generate_coords(gps.get_geometries(args.mol)[-1])
+    geometry = get_geometries(args.mol)[-1]
     frag2_geometry = geometry  # Assume identical unless mol2 is provided
 
     if args.mol2 and args.mol2 != args.mol:
-        frag2_geometry = generate_coords(gps.get_geometries(args.mol2)[-1])
+        frag2_geometry = get_geometries(args.mol2)[-1]
 
     # Apply rotation once, outside the loop
     rot_xyz = split_to_xyz(args.rot)
@@ -168,22 +202,23 @@ def create_inputs(args, grid, count=1, outname=None):
     return outname, count
 
 
-def estimate_grid_from_glog(args):
+def estimate_grid_from_mol(args):
     '''
-    Reads a gaussian output file (glog; filename) and estimate a reasonable set of  x/y/z limits as the floor/ceiling of the min/max x/y/z coordinates of the input geometry.
+    Reads incoming geometry (mol via args.mol) and estimate 
+    a reasonable set of  x/y/z limits as the floor/ceiling of the min/max x/y/z coordinates of the input geometry.
     
     Args:
         args        -   arguments passed by bimolpes
-
         both_hemispheres (bool): If False, truncate at z = 0. If True, do both +/-z and get a 'shell' of complexation energies.
         dx/dy/dz: additional user requested displacement in X/Y/Z, respectively. Coded to be symmetric (could improve that easily)
+    
     args of relevence:
-        args.mol    - the Gaussian log file which we will read geometry from and use to define our grid limits.
-    Returns:
+        args.mol    - the input file (log, xyz etc) file which we will read geometry from and use to define our grid limits.
+    returns:
         Tuple containing displacements suitable for the parse_dimension function called in bimolpes.py
     '''
     print(f'Estimating displacements based on final geometry of {args.mol}')
-    geometry = generate_coords(gps.get_geometries(args.mol)[-1])
+    geometry = get_geometries(args.mol)[-1]
     
     disp_xyz = split_to_xyz(args.est_disp) # get additional displacements in x ([0]), y([1]) and z([2]) from the args.est_disp argument. Parse with split_to_xyz.
     
@@ -261,7 +296,7 @@ def gen_grid(args):
 
     print(f'\nGrid Limits: x={args.x} y={args.y} z={args.z}')
     print(f'Resolution:  x={res_xyz[0]} y={res_xyz[1]} z={res_xyz[2]}')
-    print(f'Unpruned grid has a total of {np.product([len(x_range), len(y_range), len(z_range)])} points')
+    print(f'Unpruned grid has a total of {np.prod([len(x_range), len(y_range), len(z_range)])} points')
     
     grid = [] # store the grid here
     count = 0 # count each time we don't add to the grid 

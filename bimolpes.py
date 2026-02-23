@@ -8,7 +8,12 @@ import os
 # import our own modules
 import geoops as geo
 import processing as pro
-import visuals as vis
+
+# need to handle visuals with care incase mayavi isn't available
+try:
+    import visuals as vis
+except Exception:
+    vis = None
 import check_inputs as chk
     
 # import the BimolPESParser class for handling input arguments.

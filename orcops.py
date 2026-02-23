@@ -7,11 +7,57 @@ import glob
 
 import geoops as geo
 
-def write_inp(args, 
-              frag1, 
-              frag2,
-              displacement,
-              file_name='test'):
+def get_xyz_geometries(path_or_glob):
+    """
+    read one (or more) XYZ files.
+
+    it'll handle:
+        - single xyz file
+        - multi-structure xyz file
+        - glob pattern (*.xyz)
+
+    returns:
+        List of geometries.
+    """
+
+    matches = sorted(glob.glob(path_or_glob))
+
+    if not matches:
+        if not os.path.isfile(path_or_glob):
+            raise FileNotFoundError(f"XYZ file not found: {path_or_glob}")
+        matches = [path_or_glob]
+
+    geoms = []
+
+    for fn in matches:
+        with open(fn, "r") as f:
+            lines = [l.strip() for l in f.readlines()]
+
+        i = 0
+        nlines = len(lines)
+
+        while i < nlines:
+            if not lines[i]:
+                i += 1
+                continue
+
+            nat = int(lines[i])
+            start = i + 2
+            end = start + nat
+
+            geom = []
+            for line in lines[start:end]:
+                parts = line.split()
+                geom.append(
+                    f"{parts[0]:<2} {float(parts[1]):>15.8f} {float(parts[2]):>15.8f} {float(parts[3]):>15.8f}"
+                )
+
+            geoms.append(geom)
+            i = end
+
+    return geoms
+
+def write_inp(args, frag1, frag2, displacement, file_name='test'):
     '''
     Tool for writing two molecular geometries (frag1, frag2) into an ORCA .inp input file.
     
@@ -37,7 +83,7 @@ def write_inp(args,
             return str(coord)
 
     with open(file_name + '.inp', 'w') as f:
-        f.write(f"! {args.route} \n")  # ORCA functional, basis, dispersion,
+        f.write(f"! {args.oroute} \n")  # ORCA functional, basis, dispersion,
         f.write(f"%pal nprocs {args.cpu} end\n")
         f.write(f"%maxcore {int(args.mem) * 1000}\n")
         f.write(f"#{displacement}\n\n")
@@ -45,20 +91,24 @@ def write_inp(args,
         f.write("* xyz 0 1\n")  # First fragment/molecule
         for atom in frag1:
             parts = atom.split()
-            formatted_parts = [parts[0]] + [format_coordinate(coord) for coord in parts[1:]]
-            f.write(" ".join(formatted_parts) + "\n")
-        f.write("*\n")
-        
-        f.write("* xyz 0 1\n")  # Second fragment
+            formatted_parts = [parts[0]]+ ["(1) "] + [format_coordinate(coord) for coord in parts[1:]]
+            f.write(" ".join(formatted_parts)+ "\n")
+
+        # TO DO - probably a weak point, if we want to do n fragments
+        # then we'll need to update around here.
         for atom in frag2:
             parts = atom.split()
-            formatted_parts = [parts[0]] + [format_coordinate(coord) for coord in parts[1:]]
+            formatted_parts = [parts[0]] + ["(2) "]+ [format_coordinate(coord) for coord in parts[1:]]
             f.write(" ".join(formatted_parts) + "\n")
-        f.write("*\n")   
+        f.write("*")
     return file_name
 
 def make_sge_job(args, outname, startjob=0, endjob=0):
     """
+
+    TO DO - this is totally out of date since we migrated to slurm
+    TO DO - write a new slurm job generator 
+    
     Generate a job script for running a ORCA job on ARC (the UoL compute clusters).
     
     Args:
@@ -80,9 +130,9 @@ def make_sge_job(args, outname, startjob=0, endjob=0):
         multiple = True
         
     with open(outname + '_orca.sh', 'w') as f:
-        f.write('#$ -cwd \n')
-        f.write('#$ -V\n')
-        f.write('#$ -l h_rt=48:00:00\n')
+        f.write(f'#$ -cwd \n')
+        f.write(f'#$ -V\n')
+        f.write(f'#$ -l h_rt=48:00:00\n')
         f.write(f'#$ -l h_vmem={args.mem}G\n')
         f.write(f'#$ -pe smp {args.cpu}\n')
         f.write(f'#$ -l disk={args.disk}G\n')
